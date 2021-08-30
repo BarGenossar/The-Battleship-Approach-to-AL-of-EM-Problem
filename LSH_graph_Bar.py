@@ -10,7 +10,7 @@ from scipy import spatial
 import random
 import time
 
-
+# check
 class LSH_graph:
     def __init__(self, poolers_paths, k, seed, files_path, iteration, criterion='pagerank',
                  weights_type='with_threshold', vectors_num=12,
