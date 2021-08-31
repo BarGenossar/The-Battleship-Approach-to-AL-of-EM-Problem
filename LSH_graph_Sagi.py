@@ -103,7 +103,9 @@ class LSH_graph:
         preds_file = open(pooler_path, "r", encoding="utf-8")
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
-            preditions_dict[id_val] = int(re.sub("[^0-9]", "", line.split("match")[1]))
+            preditions_dict[id_val] = int(re.sub("[^0-9]", "", line.split("\"match\"")[1][3]))
+            if preditions_dict[id_val] != 0 and preditions_dict[id_val] != 1:
+                pass
         preds_file.close()
         return preditions_dict
 
@@ -472,45 +474,3 @@ class LSH_graph:
     @property
     def get_selected_k(self):
         return self.selected_k
-
-
-#
-# if __name__ == "__main__":
-#     configs = json.load(open('configs.json'))
-#     configs = {conf['name']: conf for conf in configs}
-#
-#     task = "Structured/Walmart-Amazon"
-#
-#     intent = 0
-#     path = configs[task + str(intent)]['path']
-#     iteration = 1
-#     seed = 1
-#     orig_train = configs[task + str(intent)]['trainset']
-#     task = task.split('/')[1]
-#     poolers_path = orig_train.replace("train" + str(intent) + ".txt",
-#                                            "available_pool" + str(intent)
-#                                            + "_iter" + str(iteration)
-#                                            + "_train_output_seed" + str(seed) + ".txt")
-#     poolers_path = poolers_path.replace('er_magellan/', '')
-#     poolers_path_available_pool = poolers_path.replace("data", "output")
-#     poolers_path_current_train = poolers_path_available_pool.replace("available_pool", "current_train")
-#
-#     k = 300
-#     dim = 768
-#     rand_vectors_num = 10
-#     LSH_iterations = 5
-#     LSH_obj = LSH_graph([poolers_path_available_pool, poolers_path_current_train],
-#                         k, 1, path, 'bc')
-
-
-
-
-
-
-
-
-
-
-
-
-
