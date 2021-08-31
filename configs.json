@@ -296,9 +296,9 @@
   "vocab": ["0", "1"],
   "path": "data/er_magellan/Structured/Walmart-Amazon/",
   "current_train": "data/er_magellan/Structured/Walmart-Amazon/current_train.txt",
-  "trainset": "data/er_magellan/Structured/Walmart-Amazon/Walmart-Amazon_train0.txt",
-  "validset": "data/er_magellan/Structured/Walmart-Amazon/Walmart-Amazon_valid0.txt",
-  "testset": "data/er_magellan/Structured/Walmart-Amazon/Walmart-Amazon_test0.txt"
+  "trainset": "data/er_magellan/Structured/Walmart-Amazon/train.txt",
+  "validset": "data/er_magellan/Structured/Walmart-Amazon/valid.txt",
+  "testset": "data/er_magellan/Structured/Walmart-Amazon/test.txt"
   },
   {
   "name": "Structured/Walmart-Amazon1",
