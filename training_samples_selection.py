@@ -114,8 +114,8 @@ class TopKSelection:
             for idx, pair in enumerate(self.original_input):
                 if idx in self.current_train_ids:
                     current_train.append(pair)
-        random.seed(1)
-        random.shuffle(current_train)
+            random.seed(self.seed)
+            random.shuffle(current_train)
         return current_train
 
     def get_pairs_ids(self):
@@ -173,11 +173,11 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="WDC/wdc_shoes_title_small")
-    parser.add_argument("--source_task", type=str, default="WDC/wdc_computers_title_small")
+    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
+    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=200)
-    parser.add_argument("--iter_num", type=int, default=2)
+    parser.add_argument("--iter_num", type=int, default=1)
     parser.add_argument("--mode", type=str, default="top_k")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--criterion", type=str, default="pagerank")
