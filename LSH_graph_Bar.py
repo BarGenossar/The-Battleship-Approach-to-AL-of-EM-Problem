@@ -10,7 +10,7 @@ from scipy import spatial
 import random
 import time
 
-# check
+
 class LSH_graph:
     def __init__(self, poolers_paths, k, seed, files_path, iteration, criterion='pagerank',
                  weights_type='with_threshold', vectors_num=12,
@@ -429,7 +429,7 @@ class LSH_graph:
                         votes_values[pooler_id][self.pool_predictions[neighbor]] += weight
                     else:
                         votes_values[pooler_id][self.training_labels[neighbor]] += weight
-                    entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
+                entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
             uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
         return uncertainty_dict
 
