@@ -13,10 +13,10 @@ import time
 
 class LSH_graph:
     def __init__(self, poolers_paths, k, seed, files_path, iteration, criterion='pagerank',
-                 weights_type='with_threshold', vectors_num=12,
+                 weights_type='with_threshold', vectors_num=10,
                  lsh_iterations=1, dim=768, pos_threshold_cond=0.9,
                  pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.85,
-                 adapted_sim_threshold=0.9, min_cc_ratio=1/100, max_cc_ratio=1/20,
+                 adapted_sim_threshold=0.9, min_cc_ratio=2/100, max_cc_ratio=10/100,
                  selection_param=0.5):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -38,15 +38,21 @@ class LSH_graph:
         self.max_cc_param = int(max_cc_ratio * k)
         self.selection_param = selection_param
         self.training_labels = self.create_labels()
-        self.poolers_ids = self.create_poolers_ids_list()
+        # self.poolers_ids = self.create_poolers_ids_list()
         self.pool_predictions = self.create_predictions()
-        self.buckets2poolers, self.poolers2buckets = self.create_buckets(self.poolers, self.lsh_iterations,
-                                                                         self.vectors_num, self.poolers)
-        self.graph = self.initialize_graph(self.poolers_ids)
-        self.graph = self.create_graph_edges(self.graph, self.lsh_iterations,
-                                             self.buckets2poolers, self.edges_threshold, self.sim_threshold)
-        self.connected_components = self.create_connected_components(self.graph)
-        self.ccs_available_pool = self.calc_CCS_available_pool()
+        self.graph, self.connected_components, self.ccs_available_pool_sizes = self.from_lsh2graph(self.poolers,
+                                                                                                   self.lsh_iterations,
+                                                                                                   self.vectors_num,
+                                                                                                   self.poolers,
+                                                                                                   self.edges_threshold,
+                                                                                                   self.sim_threshold)
+        # self.buckets2poolers, self.poolers2buckets = self.create_buckets(self.poolers, self.lsh_iterations,
+        #                                                                  self.vectors_num, self.poolers)
+        # self.graph = self.initialize_graph(self.poolers_ids)
+        # self.graph = self.create_graph_edges(self.graph, self.lsh_iterations,
+        #                                      self.buckets2poolers, self.edges_threshold, self.sim_threshold)
+        # self.connected_components = self.create_connected_components(self.graph)
+        # self.ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes()
         self.connected_components = self.validate_connected_components()
         self.cc_labels = self.assign_cc_labels(pos_threshold_cond)
         self.old_connected_components = self.clean_old_train()
@@ -84,9 +90,6 @@ class LSH_graph:
         preds_file.close()
         return poolers_dict
 
-    def create_poolers_ids_list(self):
-        return [pooler_id for pooler_id in range(len(self.poolers))]
-
     def create_labels(self):
         # for each pair in the available we assign the label 2 (unknown)
         labels_dict = {id_val: 2 for id_val in range(self.available_pool_size)}
@@ -108,6 +111,34 @@ class LSH_graph:
                 pass
         preds_file.close()
         return preditions_dict
+
+    def from_lsh2graph(self, rel_nodes, lsh_iterations, vectors_num,
+                       poolers, edges_threshold, sim_threshold):
+        poolers_ids = [pooler_id for pooler_id in poolers.keys()]
+        buckets2poolers, poolers2buckets = self.create_buckets(rel_nodes, lsh_iterations,
+                                                               vectors_num, poolers)
+        graph = self.initialize_graph(poolers_ids)
+        graph = self.create_graph_edges(graph, lsh_iterations, buckets2poolers,
+                                        edges_threshold, sim_threshold)
+        connected_components = self.create_connected_components(graph)
+        ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes(connected_components)
+        if self.validate_lsh(ccs_available_pool_sizes):
+            return graph, connected_components, ccs_available_pool_sizes
+        else:
+            return self.from_lsh2graph(rel_nodes, lsh_iterations, vectors_num - 1,
+                                       poolers, edges_threshold, 0.95 * sim_threshold)
+
+    def validate_lsh(self, ccs_available_pool_sizes):
+        max_val = self.max_cc_param * self.available_pool_size / self.k
+        min_val = self.min_cc_param * self.available_pool_size / self.k
+        legits_counter = 0
+        for cc_size in ccs_available_pool_sizes.values():
+            if min_val < cc_size < max_val:
+                legits_counter += 1
+        if legits_counter >= 2:
+            return True
+        else:
+            return False
 
     def create_buckets(self, rel_nodes, lsh_iterations, vectors_num, poolers):
         buckets2poolers_dict = dict()
@@ -137,23 +168,23 @@ class LSH_graph:
         self.fix_small_connected_components()
         return self.connected_components
 
-    def calc_CCS_available_pool(self):
-        ccs_available_pool = dict()
-        for graph_id, graph in self.connected_components.items():
-            ccs_available_pool[graph_id] = len([pooler_id for pooler_id in graph.nodes() if
-                                                pooler_id < self.available_pool_size])
-        return ccs_available_pool
+    def calc_CCS_available_pool_sizes(self, connected_components):
+        ccs_available_pool_sizes = dict()
+        for graph_id, graph in connected_components.items():
+            ccs_available_pool_sizes[graph_id] = len([pooler_id for pooler_id in graph.nodes() if
+                                                      pooler_id < self.available_pool_size])
+        return ccs_available_pool_sizes
 
     def fix_large_connected_components(self):
         ccs_copy = self.connected_components.copy()
-        ccs_available_pool_copy = self.ccs_available_pool.copy()
+        ccs_available_pool_sizes_copy = self.ccs_available_pool_sizes.copy()
         max_val = self.max_cc_param * self.available_pool_size / self.k
         flag = 0
         for graph_id, graph in ccs_copy.items():
-            if ccs_available_pool_copy[graph_id] > max_val:
+            if ccs_available_pool_sizes_copy[graph_id] > max_val:
                 new_connected_components = self.decompose_graph(graph)
                 self.connected_components.pop(graph_id)
-                self.ccs_available_pool.pop(graph_id)
+                self.ccs_available_pool_sizes.pop(graph_id)
                 self.update_connected_components(new_connected_components)
                 flag = 1
         if flag == 1:
@@ -165,26 +196,34 @@ class LSH_graph:
         poolers = {pooler_id: self.poolers[pooler_id] for pooler_id in graph.nodes()}
         lsh_iterations = 1
         edges_threshold = 0.5
-        buckets2poolers_dict, poolers2buckets_dict = self.create_buckets(graph.nodes(), lsh_iterations,
-                                                                         vectors_num, poolers)
-        new_graph = self.initialize_graph(poolers.keys())
-        new_graph = self.create_graph_edges(new_graph, lsh_iterations, buckets2poolers_dict,
-                                            edges_threshold, self.adapted_sim_threshold)
-        connected_components = self.create_connected_components(new_graph)
+
+        new_graph, connected_components, _ = self.from_lsh2graph(poolers,
+                                                                 lsh_iterations,
+                                                                 vectors_num,
+                                                                 poolers,
+                                                                 edges_threshold,
+                                                                 self.sim_threshold)
+
+        # buckets2poolers_dict, poolers2buckets_dict = self.create_buckets(graph.nodes(), lsh_iterations,
+        #                                                                  vectors_num, poolers)
+        # new_graph = self.initialize_graph(poolers.keys())
+        # new_graph = self.create_graph_edges(new_graph, lsh_iterations, buckets2poolers_dict,
+        #                                     edges_threshold, self.adapted_sim_threshold)
+        # connected_components = self.create_connected_components(new_graph)
         return connected_components
 
     def update_connected_components(self, new_connected_components):
         current_size = len(self.connected_components)
         for graph_id, graph in new_connected_components.items():
             self.connected_components[graph_id + current_size] = graph
-            self.ccs_available_pool[graph_id + current_size] = len([pooler_id for pooler_id in
+            self.ccs_available_pool_sizes[graph_id + current_size] = len([pooler_id for pooler_id in
                                                                     graph.nodes() if pooler_id <
                                                                     self.available_pool_size])
         return
 
     def fix_small_connected_components(self):
         ccs_copy = self.connected_components.copy()
-        ccs_available_pool_copy = self.ccs_available_pool.copy()
+        ccs_available_pool_copy = self.ccs_available_pool_sizes.copy()
         ccs_centroids = self.calc_centroids()
         min_val = self.min_cc_param * self.available_pool_size / self.k
         small_connected_components = {graph_id: graph for graph_id, graph in ccs_copy.items()
@@ -194,9 +233,9 @@ class LSH_graph:
         for graph_id, graph in small_connected_components.items():
             closest_graph_id = self.find_closest_cc(graph_id, ccs_centroids,
                                                     legit_connected_components)
-            self.connect_small_to_legit(graph_id, graph, closest_graph_id)
+            self.connect_small_to_legit(graph, closest_graph_id)
             self.connected_components.pop(graph_id)
-            self.ccs_available_pool.pop(graph_id)
+            self.ccs_available_pool_sizes.pop(graph_id)
         return
 
     def calc_centroids(self):
@@ -215,7 +254,7 @@ class LSH_graph:
                      for cc_id in legit_connected_components]
         return sorted(distances, key=lambda x: x[1])[0][0]
 
-    def connect_small_to_legit(self, graph_id, graph, closest_graph_id):
+    def connect_small_to_legit(self, graph, closest_graph_id):
         closest_graph = self.connected_components[closest_graph_id].copy()
         # for each node from the small graph connect it with an edge to a
         # random node from the closest legit graph
@@ -410,12 +449,16 @@ class LSH_graph:
         # selected_samples = list()
         pagerank_dict = dict()
         for graph_id in relevant_graph_ids:
-            pagerank_values = nx.pagerank(self.connected_components[graph_id], weight='weight')
+            flag = 0
+            tolerance = 1e-06
+            while not flag:
+                try:
+                    pagerank_values = nx.pagerank(self.connected_components[graph_id],
+                                                  tol=tolerance, weight='weight')
+                    flag = 1
+                except:
+                    tolerance *= 2
             pagerank_dict[graph_id] = self.rank_it(pagerank_values)
-
-            # selected_samples.extend(sorted(pagerank_dict, key=pagerank_dict.get, reverse=True)
-            #                         [:relevant_budget_dict[graph_id]])
-
         return pagerank_dict
 
     def calc_uncertainty(self, relevant_graph_ids):
