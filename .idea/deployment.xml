@@ -1,18 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="sbargen@iegpu06.iem.technion.ac.il:22 password" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="matan-so@iegpu01.iem.technion.ac.il:22" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
-      <paths name="sbargen@iegpu06.iem.technion.ac.il:22">
+      <paths name="Machine Learning Adv 2020-0020">
         <serverdata>
           <mappings>
-            <mapping deploy="/lv_local/home/sbargen/activeER/code" local="$PROJECT_DIR$" web="/" />
+            <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="sbargen@iegpu06.iem.technion.ac.il:22 password">
+      <paths name="matan-so@iegpu01.iem.technion.ac.il:22">
         <serverdata>
           <mappings>
-            <mapping deploy="/lv_local/home/sbargen/activeER/code" local="$PROJECT_DIR$" />
+            <mapping deploy="/lv_local/home/matan-so/the-BattleShip-Approach-to-AL-of-EM-Problem/the-BattleShip-Approach-to-AL-of-EM-Problem" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="matan-so@iegpu02.iem.technion.ac.il:22">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="matan-so@iegpu06.iem.technion.ac.il:22">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

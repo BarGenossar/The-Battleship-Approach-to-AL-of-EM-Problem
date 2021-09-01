@@ -8,11 +8,11 @@ Iterations=$2;
 Seeds=$3;
 
 
-TaskName="Structured/Amazon-Google"
-SourceTask="Structured/Walmart-Amazon"
+TaskName="WDC/wdc_shoes_title_small"
+SourceTask="WDC/wdc_computers_title_small"
 Mode="top_k"
-InputPath="data/er_magellan/Structured/Amazon-Google/"
-OutputPath="output/Structured/Amazon-Google/"
+InputPath="data/wdc/shoes/title/"
+OutputPath="output/wdc/shoes/title/computers/"
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"
@@ -20,7 +20,7 @@ criterion_type="pagerank"
 declare -i Intent=0
 declare -i MaxLen=512
 declare -i Batch=16
-declare -i N_Epochs=20
+declare -i N_Epochs=5
 
 
 
@@ -28,7 +28,9 @@ for (( seed=1; seed<=Seeds; seed++ ))
   do
     for (( iter=0; iter<=Iterations; iter++ ))
     do
-        echo "seed: $seed, iteration: $iter";
+#        python email_sender.py \
+#                --message="Demo Iteration Started. seed = ${seed} / ${Seeds}, iteration = ${iter} / ${Iterations}"
+
         python training_samples_selection.py \
                 --task=${TaskName} \
                 --source_task=${SourceTask} \
@@ -37,7 +39,8 @@ for (( seed=1; seed<=Seeds; seed++ ))
                 --iter_num=$iter \
                 --mode=${Mode} \
                 --seed=$seed \
-                --criterion=${criterion_type}
+                --criterion=${criterion_type} \
+                --output_path=${OutputPath}
 
         python train_ditto.py \
                 --task=${TaskName} \
@@ -61,3 +64,6 @@ for (( seed=1; seed<=Seeds; seed++ ))
                 --iter_num=$iter
     done
   done
+
+#python email_sender.py \
+#        --message="Run ${TaskName} Finished"
