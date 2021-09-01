@@ -8,9 +8,10 @@ import argparse
 import json
 import torch
 
+
 class TopKSelection:
     def __init__(self, task, SourceTask, k, iteration, mode, files_path,
-                 orig_train_path, seed, criterion='pagerank', intent_num=0):
+                 orig_train_path, seed, output_path, criterion='pagerank', intent_num=0):
         torch.manual_seed(seed)
         random.seed(seed)
         self.task = task
@@ -22,6 +23,7 @@ class TopKSelection:
         self.orig_train = orig_train_path
         self.seed = seed
         self.intent = intent_num
+        self.output_path = output_path
         self.criterion = criterion
         self.original_input = self.get_original_input(self.orig_train)
         self.available_pool_ids = self.get_available_pool_ids()
@@ -135,14 +137,15 @@ class TopKSelection:
 
     def define_poolers_path(self):
         task = self.task.split('/')[1]
+        source_task = self.output_path.split('/')[-2]
         if "train" + str(self.intent) + ".txt" in self.orig_train:
             poolers_path = self.orig_train.replace("train" + str(self.intent) + ".txt",
-                                                   task + "_available_pool" + str(self.intent)
+                                                   "/" + source_task + "/" + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iteration - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
         else:
             poolers_path = self.orig_train.replace("train.txt",
-                                                   task + "_available_pool" + str(self.intent)
+                                                   "/" + source_task + "/" + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iteration - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
             if poolers_path[-4:] != ".txt":
@@ -173,14 +176,15 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
-    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
+    parser.add_argument("--task", type=str, default="WDC/wdc_shoes_title_small")
+    parser.add_argument("--source_task", type=str, default="WDC/wdc_computers_title_small")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=200)
     parser.add_argument("--iter_num", type=int, default=1)
     parser.add_argument("--mode", type=str, default="top_k")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--criterion", type=str, default="pagerank")
+    parser.add_argument("--output_path", type=str, default="output/wdc/shoes/title/computers/")
     start = time.time()
     hp = parser.parse_args()
 
@@ -192,6 +196,7 @@ if __name__ == "__main__":
     selection_mode = hp.mode
     seed = hp.seed
     criterion = hp.criterion
+    output_path = hp.output_path
 
     configs = json.load(open('configs.json'))
     configs = {conf['name']: conf for conf in configs}
@@ -199,8 +204,8 @@ if __name__ == "__main__":
     path = configs[task + str(intent)]['path']
     orig_train = configs[task + str(intent)]['trainset']
     source_task += str(intent)
-    top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode, path, orig_train, seed, criterion)
+    top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode,
+                                  path, orig_train, seed, output_path, criterion)
     end = time.time()
 
     print(f'The process took :{round(end - start, 2)} seconds')
-
