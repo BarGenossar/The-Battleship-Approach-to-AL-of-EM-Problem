@@ -182,7 +182,7 @@ def initialize_and_train(task_config,
         if dev_f1 == previous_dev_f1 and test_f1 == previous_test_f1:
             epochs_counter += 1
             if dev_f1 <= 1e-6:
-                if epochs_counter == 5:
+                if epochs_counter == 10:
                     break
             else:
                 if epochs_counter == 3:
