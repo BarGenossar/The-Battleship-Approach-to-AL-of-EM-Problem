@@ -160,17 +160,17 @@ class TopKSelection:
     def write_pairs2file(self, pairs_type):
         source_task = self.output_path.split('/')[-2]
         documentation_path = self.files_path + source_task + "/"
-        if not os.path.exists(path):
-            os.makedirs(path)
+        if not os.path.exists(documentation_path):
+            os.makedirs(documentation_path)
         if pairs_type == 'pool':
             pairs = self.available_pool
             new_file1 = open(self.files_path + 'available_pool.txt', "w", encoding="utf-8")
-            new_file2 = open(documentation_path + "/" + 'available_pool_iter' + str(self.iter) +
+            new_file2 = open(documentation_path + 'available_pool_iter' + str(self.iter) +
                              '_seed' + str(self.seed) + '.txt', "w", encoding="utf-8")
         else:
             pairs = self.current_train
             new_file1 = open(self.files_path + 'current_train.txt', "w", encoding="utf-8")
-            new_file2 = open(documentation_path + "/" + 'current_train_iter' + str(self.iter) +
+            new_file2 = open(documentation_path + 'current_train_iter' + str(self.iter) +
                              '_seed' + str(self.seed) + '.txt', "w", encoding="utf-8")
         for pair in pairs:
             new_file1.write(pair)
