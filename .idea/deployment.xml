@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="sbargen@iegpu06.iem.technion.ac.il:22" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
+    <serverData>
+      <paths name="sbargen@iegpu06.iem.technion.ac.il:22">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/lv_local/home/sbargen/activeER/code" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="sbargen@iegpu06.iem.technion.ac.il:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/lv_local/home/sbargen/activeER/code" local="$PROJECT_DIR$" web="" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="sbargen@iegpu06.iem.technion.ac.il:22 password (1)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>

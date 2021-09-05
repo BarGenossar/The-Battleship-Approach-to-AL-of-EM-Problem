@@ -7,20 +7,28 @@ Iterations=$2;
 
 Seeds=$3;
 
-
-TaskName="WDC/wdc_shoes_title_small"
-SourceTask="WDC/wdc_computers_title_small"
+TaskName="Structured/Walmart-Amazon"
+SourceTask="Structured/Amazon-Google"
 Mode="top_k"
-InputPath="data/wdc/shoes/title/"
-OutputPath="output/wdc/shoes/title/computers/"
+InputPath="data/er_magellan/Structured/Walmart-Amazon/"
+OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"
 
+#TaskName="Structured/Amazon-Google"
+#SourceTask="Structured/Walmart-Amazon"
+#Mode="top_k"
+#InputPath="data/wdc/shoes/title/"
+#OutputPath="output/wdc/shoes/title/computers/"
+#LM="roberta"
+#training_type="active_learning"
+#criterion_type="pagerank"
+
 declare -i Intent=0
 declare -i MaxLen=512
-declare -i Batch=16
-declare -i N_Epochs=5
+declare -i Batch=12
+declare -i N_Epochs=15
 
 
 
@@ -30,6 +38,7 @@ for (( seed=1; seed<=Seeds; seed++ ))
     do
 #        python email_sender.py \
 #                --message="Demo Iteration Started. seed = ${seed} / ${Seeds}, iteration = ${iter} / ${Iterations}"
+        echo Iteration: $iter
 
         python training_samples_selection.py \
                 --task=${TaskName} \

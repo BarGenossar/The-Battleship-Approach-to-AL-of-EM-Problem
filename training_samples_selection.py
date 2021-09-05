@@ -143,18 +143,18 @@ class TopKSelection:
         source_task = self.output_path.split('/')[-2]
         if "train" + str(self.intent) + ".txt" in self.orig_train:
             poolers_path = self.orig_train.replace("train" + str(self.intent) + ".txt",
-                                                   "/" + source_task + "/" + task + "_available_pool" + str(self.intent)
+                                                   source_task + "/" + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iter - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
         else:
             poolers_path = self.orig_train.replace("train.txt",
-                                                   "/" + source_task + "/" + task + "_available_pool" + str(self.intent)
+                                                   source_task + "/" + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iter - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
             if poolers_path[-4:] != ".txt":
                 poolers_path = poolers_path.split(".txt", 1)[0]
                 poolers_path += '.txt'
-        poolers_path = poolers_path.replace('er_magellan/', '')
+        # poolers_path = poolers_path.replace('er_magellan/', '')
         return poolers_path
 
     def write_pairs2file(self, pairs_type):
@@ -199,15 +199,15 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="WDC/wdc_shoes_title_small")
-    parser.add_argument("--source_task", type=str, default="WDC/wdc_computers_title_small")
+    parser.add_argument("--task", type=str, default="Structured/Walmart-Amazon")
+    parser.add_argument("--source_task", type=str, default="Structured/Amazon-Google")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
     parser.add_argument("--iter_num", type=int, default=1)
     parser.add_argument("--mode", type=str, default="top_k")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/wdc/shoes/title/computers/")
+    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/")
     start = time.time()
     hp = parser.parse_args()
 
