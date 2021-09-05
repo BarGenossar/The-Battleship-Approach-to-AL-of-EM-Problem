@@ -198,7 +198,6 @@ class TopKSelection:
         output.close()
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="Structured/Walmart-Amazon")
