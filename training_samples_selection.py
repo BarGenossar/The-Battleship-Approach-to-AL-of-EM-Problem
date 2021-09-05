@@ -143,12 +143,14 @@ class TopKSelection:
         source_task = self.output_path.split('/')[-2]
         if "train" + str(self.intent) + ".txt" in self.orig_train:
             poolers_path = self.orig_train.replace("train" + str(self.intent) + ".txt",
-                                                   source_task + "/" + task + "_available_pool" + str(self.intent)
+                                                   source_task + "/" + self.mode + "/"
+                                                   + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iter - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
         else:
             poolers_path = self.orig_train.replace("train.txt",
-                                                   source_task + "/" + task + "_available_pool" + str(self.intent)
+                                                   source_task + "/" + self.mode + "/"
+                                                   + task + "_available_pool" + str(self.intent)
                                                    + "_iter" + str(self.iter - 1)
                                                    + "_train_output_seed" + str(self.seed) + ".txt")
             if poolers_path[-4:] != ".txt":
