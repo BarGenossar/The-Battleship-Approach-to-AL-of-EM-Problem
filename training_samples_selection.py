@@ -161,7 +161,7 @@ class TopKSelection:
 
     def write_pairs2file(self, pairs_type):
         source_task = self.output_path.split('/')[-2]
-        documentation_path = self.files_path + source_task + "/"
+        documentation_path = self.files_path + source_task + "/" + self.mode + "/"
         if not os.path.exists(documentation_path):
             os.makedirs(documentation_path)
         if pairs_type == 'pool':
