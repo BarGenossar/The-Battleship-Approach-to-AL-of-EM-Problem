@@ -254,6 +254,7 @@ if __name__ == "__main__":
     parser.add_argument("--with_intents", type=int, default=1)
     # parser.add_argument("--trained_model", type=str, default="WDC/wdc_computers_title_small/wdc_computers_title_small0")
     parser.add_argument("--trained_model", type=str, default=None)
+    parser.add_argument("--mode", type=str, default=None)
 
     hp = parser.parse_args()
 
@@ -262,6 +263,7 @@ if __name__ == "__main__":
     training_type = hp.training_type
     seed = hp.seed
     trained_model = hp.trained_model
+    output_path = hp.output_path + str(hp.mode) + '/'
 
     # file_types = ['train', 'valid', 'test']
     if training_type == "active_learning":
@@ -301,12 +303,12 @@ if __name__ == "__main__":
 
             if training_type == 'active_learning':
                 if file_type == 'train':
-                    output_path_available_pool = hp.output_path + '/' + task_name[:-1] + \
+                    output_path_available_pool = output_path + task_name[:-1] + \
                                                  '_available_pool' + str(intent) + \
                                                  '_iter' + str(iteration) + '_' + file_type + '_output_seed' + \
                                                  str(seed) + '.txt'
 
-                    output_path_current_train = hp.output_path + '/' + task_name[:-1] + \
+                    output_path_current_train = output_path + task_name[:-1] + \
                                                 '_current_train' + str(intent) + '_iter' + \
                                                 str(iteration) + '_' + file_type + '_output_seed' + \
                                                 str(seed) + '.txt'
@@ -316,14 +318,14 @@ if __name__ == "__main__":
                     #     output_path_files = [output_path_available_pool]
                     output_path_files = [output_path_available_pool, output_path_current_train]
                 else:
-                    output_path_files = [hp.output_path + '/' + task_name[:-1] +
+                    output_path_files = [output_path + task_name[:-1] +
                                          str(intent) + '_iter' + str(iteration) +
                                          '_' + file_type + '_output_seed' +
                                          str(seed) + '.txt']
             else:
-                output_path_files = [hp.output_path + '/' + task_name[:-1] + \
-                                    '_full' + str(intent) + '_' + file_type + \
-                                    '_output_seed' + str(seed) + '.txt']
+                output_path_files = [output_path + task_name[:-1] +
+                                     '_full' + str(intent) + '_' + file_type +
+                                     '_output_seed' + str(seed) + '.txt']
 
             summarizer = dk_injector = None
             if hp.summarize:
@@ -337,7 +339,7 @@ if __name__ == "__main__":
 
             # run prediction
             for input_path, output_path_file in zip(input_path_files, output_path_files):
-                predict(input_path, hp.output_path, output_path_file, config, model, file_type, seed, intent,
+                predict(input_path, output_path, output_path_file, config, model, file_type, seed, intent,
                         summarizer=summarizer,
                         max_len=hp.max_len,
                         lm=hp.lm,

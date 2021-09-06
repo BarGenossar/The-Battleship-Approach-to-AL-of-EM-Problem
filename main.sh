@@ -7,11 +7,11 @@ Iterations=$2;
 
 Seeds=$3;
 
-TaskName="Structured/Walmart-Amazon"
-SourceTask="Structured/Amazon-Google"
+TaskName="Structured/Amazon-Google"
+SourceTask="Structured/Walmart-Amazon"
 Mode="top_k"
-InputPath="data/er_magellan/Structured/Walmart-Amazon/"
-OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
+InputPath="data/er_magellan/Structured/Amazon-Google/"
+OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"
@@ -70,7 +70,8 @@ for (( seed=1; seed<=Seeds; seed++ ))
                 --max_len=${MaxLen} \
                 --training_type=${training_type} \
                 --seed=$seed \
-                --iter_num=$iter
+                --iter_num=$iter \
+                --mode=$Mode
     done
   done
 
