@@ -15,7 +15,7 @@ import time
 
 class LSH_graph:
     def __init__(self, poolers_paths, k, seed, files_path, output_path, iteration, criterion='pagerank',
-                 weights_type='with_threshold', vectors_num=10,
+                 mode='top_k', weights_type='with_threshold', vectors_num=10,
                  lsh_iterations=5, dim=768, pos_threshold_cond=0.5,
                  pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.4,
                  adapted_sim_threshold=0.9, min_cc_ratio=2/100, max_cc_ratio=10/100,
@@ -36,6 +36,7 @@ class LSH_graph:
         self.sim_threshold = sim_threshold
         self.adapted_sim_threshold = adapted_sim_threshold
         self.criterion = criterion
+        self.mode = mode
         self.poolers, self.available_pool_size = self.create_poolers()
         self.min_val = int(min_cc_ratio * self.available_pool_size)
         self.max_val = int(max_cc_ratio * self.available_pool_size)
@@ -190,8 +191,10 @@ class LSH_graph:
                 buckets2poolers = self.create_buckets(rel_poolers_ids)
             else:
                 break
-        final_buckets2poolers, bucket_parents = self.merge_buckets2poolers(final_buckets2poolers, buckets2poolers,
-                                                           bucket_parents, str(lsh_iter))
+        final_buckets2poolers, bucket_parents = self.merge_buckets2poolers(final_buckets2poolers,
+                                                                           buckets2poolers,
+                                                                           bucket_parents,
+                                                                           str(lsh_iter))
         return final_buckets2poolers, bucket_parents
 
     @staticmethod
@@ -438,8 +441,7 @@ class LSH_graph:
 
     def graph_with_threshold(self, graph, buckets2poolers, sim_threshold):
         pairs_set = self.create_pairs_dict(buckets2poolers)
-        pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in
-                      pairs_set]
+        pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in pairs_set]
         # pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in
         #               pairs_dict.keys() if pairs_dict[pair] >= sim_threshold]
         # pairs_list = [(pair[0], pair[1]) for pair in pairs_dict.keys() if pairs_dict[pair] >= threshold]
@@ -584,7 +586,7 @@ class LSH_graph:
         return final_cands
 
     def save_to_pkl(self, files_list, file_names_list):
-        path = self.output_path + "pkl_files/"
+        path = self.output_path + self.mode + "/pkl_files/"
         if not os.path.exists(path):
             os.makedirs(path)
         for file, file_name in zip(files_list, file_names_list):

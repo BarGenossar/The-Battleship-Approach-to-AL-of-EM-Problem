@@ -135,7 +135,8 @@ class TopKSelection:
         poolers_path_available_pool = poolers_path.replace("data", "output")
         poolers_path_current_train = poolers_path_available_pool.replace("available_pool", "current_train")
         LSH_graph_obj = LSH_graph([poolers_path_available_pool, poolers_path_current_train],
-                                  self.k, self.seed, self.files_path, self.output_path, self.iter, self.criterion)
+                                  self.k, self.seed, self.files_path, self.output_path, self.iter,
+                                  self.criterion, self.mode)
         return LSH_graph_obj.get_selected_k
 
     def define_poolers_path(self):
@@ -189,7 +190,7 @@ class TopKSelection:
         return training_lines
 
     def save_to_pkl(self, file, file_name):
-        path = self.output_path + "pkl_files/"
+        path = self.output_path + self.mode + "/pkl_files/"
         if not os.path.exists(path):
             os.makedirs(path)
         output = open(path + file_name + '_iter' + str(self.iter) +
@@ -200,15 +201,15 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="Structured/Walmart-Amazon")
-    parser.add_argument("--source_task", type=str, default="Structured/Amazon-Google")
+    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
+    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
     parser.add_argument("--iter_num", type=int, default=1)
     parser.add_argument("--mode", type=str, default="top_k")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/")
+    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/")
     start = time.time()
     hp = parser.parse_args()
 
