@@ -7,11 +7,15 @@ Iterations=$2;
 
 Seeds=$3;
 
-TaskName="Structured/Walmart-Amazon"
-SourceTask="Structured/Amazon-Google"
-Mode="top_k"
-InputPath="data/er_magellan/Structured/Walmart-Amazon/"
-OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
+TaskName="Structured/Amazon-Google"
+SourceTask="Structured/Walmart-Amazon"
+
+# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D"
+# for all_D set Iterations = 0
+Mode="top_k_cliques"
+
+InputPath="data/er_magellan/Structured/Amazon-Google/"
+OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"

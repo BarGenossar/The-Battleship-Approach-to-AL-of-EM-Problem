@@ -44,7 +44,7 @@ class LSH_graph:
         self.selection_param = selection_param
         self.training_labels = self.create_labels()
         # self.poolers_ids = self.create_poolers_ids_list()
-        self.pool_predictions = self.create_predictions()
+        self.pool_predictions, self.confidence_dict = self.create_predictions()
         self.graph, self.connected_components, self.ccs_available_pool_sizes = self.from_lsh2graph(self.poolers.keys())
         self.connected_components = self.validate_connected_components()
         self.cc_labels = self.assign_cc_labels(pos_threshold_cond)
@@ -95,16 +95,17 @@ class LSH_graph:
         return labels_dict
 
     def create_predictions(self):
-        preditions_dict = dict()
+        preditions_dict, confidence_dict = dict(), dict()
         pooler_path = self.poolers_paths[0]
         preds_file = open(pooler_path, "r", encoding="utf-8")
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
             preditions_dict[id_val] = int(re.sub("[^0-9]", "", line.split("\"match\"")[1][3]))
+            confidence_dict[id_val] = float(re.sub("[^0-9.]", "", line.split("match_confidence")[1].split("pooler")[0]))
             if preditions_dict[id_val] != 0 and preditions_dict[id_val] != 1:
                 pass
         preds_file.close()
-        return preditions_dict
+        return preditions_dict, confidence_dict
 
     def from_lsh2graph(self, poolers_ids):
         # poolers_ids = {pooler_id for pooler_id in self.poolers.keys()}
@@ -228,11 +229,11 @@ class LSH_graph:
         buckets2poolers_copy = buckets2poolers.copy()
         new_bucket_id = len(final_buckets2poolers)
         for bucket_id, bucket in buckets2poolers_copy.items():
-            if len(bucket) >= 1.5 * self.max_val:
+            if len(bucket) >= 2 * self.max_val:
                 new_buckets = self.create_buckets(bucket)
                 buckets2poolers.pop(bucket_id)
                 for bucket_id2, bucket2 in new_buckets.items():
-                    if 1.5 * self.min_val < len(bucket2) < 1.5 * self.max_val:
+                    if 2 * self.min_val < len(bucket2) < 2 * self.max_val:
                         final_buckets2poolers['lshIter' + lsh_iter + '_' + str(new_bucket_id)] = bucket2
                         bucket_parents['lshIter' + lsh_iter + '_' + str(new_bucket_id)] = bucket_id
                         new_bucket_id += 1
@@ -346,16 +347,20 @@ class LSH_graph:
 
     def assign_cc_labels(self, pos_threshold):
         connected_components_labels = dict()
+        labels_weight = 1 - 0.05 * self.iter
         for graph_id, graph in self.connected_components.items():
             cc_labels = {node_id: self.training_labels[node_id] for node_id in graph.nodes()}
+            cc_predictions = {node_id: self.pool_predictions[node_id] for node_id in graph.nodes()
+                              if node_id in self.pool_predictions.keys()}
             labels_counter = Counter(cc_labels.values())
+            predictions_counter = Counter(cc_predictions.values())
+            expectation = labels_weight * labels_counter[1] + (1 - labels_weight) * predictions_counter[1]
             try:
-                if labels_counter[1] / (labels_counter[0] + labels_counter[1]) >= pos_threshold:
+                if expectation >= pos_threshold * graph.number_of_nodes():
                     connected_components_labels[graph_id] = 1
                 else:
                     connected_components_labels[graph_id] = 0
             except:
-                # This clause exists for cases where only labels_counter[0]>0
                 connected_components_labels[graph_id] = 0
         ccs_labels_counter = Counter(connected_components_labels.values())
         if ccs_labels_counter[1] < 2:
@@ -442,12 +447,12 @@ class LSH_graph:
     def graph_with_threshold(self, graph, buckets2poolers, sim_threshold):
         pairs_set = self.create_pairs_dict(buckets2poolers)
         pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in pairs_set]
-        # pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in
-        #               pairs_dict.keys() if pairs_dict[pair] >= sim_threshold]
-        # pairs_list = [(pair[0], pair[1]) for pair in pairs_dict.keys() if pairs_dict[pair] >= threshold]
-        pairs_list_final = [pair for pair in pairs_list if pair[2] > sim_threshold]
+        if self.mode == "top_k_cliques":
+            pairs_list_final = pairs_list.copy()
+        else:
+            # mode = "top_k_threshold"
+            pairs_list_final = [pair for pair in pairs_list if pair[2] > sim_threshold]
         graph.add_weighted_edges_from(pairs_list_final)
-        # graph.add_edges_from(pairs_list)
         return graph
 
     def calc_pair_weight(self, pair):
@@ -533,6 +538,13 @@ class LSH_graph:
         return pagerank_dict
 
     def calc_uncertainty(self, relevant_graph_ids):
+        if self.mode == "top_k_cliques":
+            return self.calc_prediction_uncertainty(relevant_graph_ids)
+        else:
+            # mode = top_k_threshold
+            return self.calc_neighbors_uncertainty(relevant_graph_ids)
+
+    def calc_neighbors_uncertainty(self, relevant_graph_ids):
         votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
         for graph_id in relevant_graph_ids:
             for pooler_id in self.connected_components[graph_id]:
@@ -545,6 +557,19 @@ class LSH_graph:
                         votes_values[pooler_id][self.pool_predictions[neighbor]] += weight
                     else:
                         votes_values[pooler_id][self.training_labels[neighbor]] += weight
+                entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
+            uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
+        return uncertainty_dict
+
+    def calc_prediction_uncertainty(self, relevant_graph_ids):
+        votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
+        for graph_id in relevant_graph_ids:
+            for pooler_id in self.connected_components[graph_id]:
+                votes_values[pooler_id] = dict()
+                prediction = self.pool_predictions[pooler_id]
+                confidence = self.confidence_dict[pooler_id]
+                votes_values[pooler_id][prediction] = confidence
+                votes_values[pooler_id][1 - prediction] = 1 - confidence
                 entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
             uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
         return uncertainty_dict

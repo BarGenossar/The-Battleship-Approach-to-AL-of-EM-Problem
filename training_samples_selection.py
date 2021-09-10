@@ -36,6 +36,8 @@ class TopKSelection:
         # self.pairs_ids, self.ids_pairs = self.get_pairs_ids()
 
     def get_available_pool_ids(self):
+        if self.mode == "all_D":
+            return None
         if self.iter == 0:
             available_pool_ids = set([idx for idx in range(len(self.original_input))])
             output = open(self.files_path + 'available_pool_ids.pkl', 'wb')
@@ -48,6 +50,8 @@ class TopKSelection:
         return available_pool_ids
 
     def get_available_pool(self):
+        if self.mode == "all_D":
+            return None, None
         available_pool = []
         pool_to_original = dict()
         pool_counter = 0
@@ -83,7 +87,7 @@ class TopKSelection:
         self.available_pool, self.pool_to_original = self.get_available_pool()
 
     def get_new_train_ids(self):
-        if self.iter == 0:
+        if self.mode == "all_D" or self.iter == 0:
             return None
         elif self.mode == "random":
             selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
@@ -114,6 +118,8 @@ class TopKSelection:
         return source_dataset_file
 
     def get_new_train(self):
+        if self.mode == "all_D":
+            return self.original_input
         current_train = self.read_source_dataset(self.source_task)
         if self.iter >= 1:
             for idx, pair in enumerate(self.original_input):
@@ -161,6 +167,8 @@ class TopKSelection:
         return poolers_path
 
     def write_pairs2file(self, pairs_type):
+        if self.mode == "all_D" and pairs_type == 'pool':
+            return
         source_task = self.output_path.split('/')[-2]
         documentation_path = self.files_path + source_task + "/" + self.mode + "/"
         if not os.path.exists(documentation_path):
@@ -173,8 +181,11 @@ class TopKSelection:
         else:
             pairs = self.current_train
             new_file1 = open(self.files_path + 'current_train.txt', "w", encoding="utf-8")
-            new_file2 = open(documentation_path + 'current_train_iter' + str(self.iter) +
-                             '_seed' + str(self.seed) + '.txt', "w", encoding="utf-8")
+            if self.mode == "all_D":
+                new_file2 = open(documentation_path + 'all_D.txt', "w", encoding="utf-8")
+            else:
+                new_file2 = open(documentation_path + 'current_train_iter' + str(self.iter) +
+                                 '_seed' + str(self.seed) + '.txt', "w", encoding="utf-8")
         for pair in pairs:
             new_file1.write(pair)
             new_file2.write(pair)
