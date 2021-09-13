@@ -116,10 +116,11 @@ class LSH_graph:
         #                                 edges_threshold, sim_threshold)
         graph = self.graph_with_threshold(graph, final_buckets2poolers, self.sim_threshold)
         connected_components = self.create_connected_components(graph)
+        light_conncted_components = self.get_light_connected_components(connected_components)
         ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes(connected_components)
-        self.save_to_pkl([final_buckets2poolers, connected_components,
+        self.save_to_pkl([final_buckets2poolers, light_conncted_components,
                           ccs_available_pool_sizes, buckets2poolers, bucket_parents],
-                         ["final_buckets2poolers", "orig_connected_components",
+                         ["final_buckets2poolers", "orig_connected_components(light)",
                           "ccs_available_pool_sizes", "orig_buckets2poolers", "bucket_parents"])
         return graph, connected_components, ccs_available_pool_sizes
 
@@ -253,8 +254,16 @@ class LSH_graph:
     def validate_connected_components(self):
         # self.fix_large_connected_components()
         self.fix_small_connected_components()
-        self.save_to_pkl([self.connected_components], ["final_connected_components"])
+        light_conncted_components = self.get_light_connected_components(self.connected_components)
+        self.save_to_pkl([light_conncted_components, self.connected_components],
+                         ["final_connected_components(light)", "final_connected_components"])
         return self.connected_components
+
+    def get_light_connected_components(self, connected_components):
+        light_dict = dict()
+        for graph_id, graph in connected_components.items():
+            light_dict[graph_id] = [self.poolers[pooler_id] for pooler_id in graph.nodes()]
+        return light_dict
 
     def calc_CCS_available_pool_sizes(self, connected_components):
         ccs_available_pool_sizes = dict()
@@ -496,9 +505,11 @@ class LSH_graph:
         pos_uncertainty = self.calc_uncertainty(self.positive_graph_ids)
         neg_uncertainty = self.calc_uncertainty(self.negative_graph_ids)
         pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
-                                            self.positive_graph_ids, self.positive_budget_dict)
+                                            self.positive_graph_ids,
+                                            self.positive_budget_dict, True)
         neg_selected = self.find_candidates(neg_centrality, neg_uncertainty,
-                                            self.negative_graph_ids, self.negative_budget_dict)
+                                            self.negative_graph_ids,
+                                            self.negative_budget_dict, False)
         selected_k = pos_selected + neg_selected
         self.save_to_pkl([pos_centrality, neg_centrality, pos_uncertainty, neg_uncertainty, selected_k],
                          ["pos_centrality", "neg_centrality", "pos_uncertainty", "neg_uncertainty", "selected_k"])
@@ -596,7 +607,8 @@ class LSH_graph:
             result[pooler_id] = rank
         return result
 
-    def find_candidates(self, cands_centrality, cands_uncertainty, relevant_graph_ids, relevant_budget_dict):
+    def find_candidates(self, cands_centrality, cands_uncertainty, relevant_graph_ids,
+                        relevant_budget_dict, is_pos):
         final_cands = []
         for graph_id in relevant_graph_ids:
             weighted_ranking = dict()
@@ -606,7 +618,12 @@ class LSH_graph:
                 pooler_rank = self.selection_param * centrality_val + (1 - self.selection_param) * uncertainty_val
                 weighted_ranking[pooler_id] = pooler_rank
             sorted_items = sorted(weighted_ranking.items(), key=lambda item: item[1])
-            cc_cands = [item[0] for item in sorted_items[:relevant_budget_dict[graph_id]]]
+            if is_pos:
+                sorted_items_pos = [item[0] for item in sorted_items if self.pool_predictions[item[0]]]
+                sorted_items_neg = [item[0] for item in sorted_items if not self.pool_predictions[item[0]]]
+                cc_cands = (sorted_items_pos + sorted_items_neg)[:relevant_budget_dict[graph_id]]
+            else:
+                cc_cands = [item[0] for item in sorted_items[:relevant_budget_dict[graph_id]]]
             final_cands.extend(cc_cands)
         return final_cands
 
@@ -624,4 +641,3 @@ class LSH_graph:
     @property
     def get_selected_k(self):
         return self.selected_k
-
