@@ -34,7 +34,7 @@ class TopKSelection:
         # Row indices of available pool (as appeared in the original data)
         self.available_pool, self.pool_to_original = self.get_available_pool()
         # List of records available for pooling, and their corresponding indices in the original file.
-        self.current_train_ids, high_confidence_positive, high_confidence_negative = self.handle_new_train_ids()
+        self.current_train_ids, self.high_confidence_positive, self.high_confidence_negative = self.handle_new_train_ids()
         # high_confidence_positive, high_confidence_negative are available only in case of self.mode = top_k_Kasai
         self.current_train = self.get_new_train()  # List of records to train on, from source and target.
         self.write_pairs2file('pool')
@@ -119,15 +119,14 @@ class TopKSelection:
 
     def get_new_train_ids(self):
         """
-        Use the given mode to pool K records out of the records available for pool, to use for training in the next iteration.
-        for first iteration, return None (the model havn't yet trained over D')
-        for random - select K random records.
-        for top_k - use the battleship approach
+        Use the given mode to pool K records out of the records available for pool, to use for training in the next
+        iteration. for first iteration, return None (the model havn't yet trained over D') for random - select K
+        random records. for top_k - use the battleship approach
         """
         if "only_selected" in self.mode:
-            return self.find_all_selected()
+            return self.find_all_selected(), None, None
         elif self.mode == "all_D" or self.iter == 0:
-            return None
+            return None, None, None
         elif self.mode == "random":
             selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
         else:

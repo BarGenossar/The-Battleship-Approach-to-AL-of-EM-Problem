@@ -8,7 +8,9 @@ class Kasai:
 
         self.d_plus, self.d_minus = self.create_confidences_available_pool()
         self.likely_false_positive, self.high_confidence_positive = self.top_bottom_k(self.d_plus)
+        # set of samples' indices with match prediction with high and low entropy (respectively)
         self.likely_false_negative, self.high_confidence_negative = self.top_bottom_k(self.d_minus)
+        # set of samples' indices with non-match prediction with high and low entropy (respectively)
         self.likely_false = set.union(self.likely_false_positive, self.likely_false_negative)
 
     def create_confidences_available_pool(self):
