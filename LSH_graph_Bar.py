@@ -18,7 +18,7 @@ class LSH_graph:
                  mode='top_k', weights_type='with_threshold', vectors_num=10,
                  lsh_iterations=5, dim=768, pos_threshold_cond=0.5,
                  pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.4,
-                 adapted_sim_threshold=0.9, min_cc_ratio=2/100, max_cc_ratio=10/100,
+                 adapted_sim_threshold=0.9, min_cc_ratio=2 / 100, max_cc_ratio=10 / 100,
                  selection_param=0.5):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -38,9 +38,9 @@ class LSH_graph:
         self.criterion = criterion
         self.mode = mode
         self.poolers, self.available_pool_size = self.create_poolers()
-        self.min_val = int(min_cc_ratio * self.available_pool_size)
-        self.max_val = int(max_cc_ratio * self.available_pool_size)
-        self.vectors_num = vectors_num
+        self.min_val = int(min_cc_ratio * self.available_pool_size)  # The actual size of the smallest CC possible
+        self.max_val = int(max_cc_ratio * self.available_pool_size)  # The actual size of the largest CC possible
+        self.vectors_num = vectors_num  # LSH vectors
         self.selection_param = selection_param
         self.training_labels = self.create_labels()
         # self.poolers_ids = self.create_poolers_ids_list()
@@ -55,6 +55,10 @@ class LSH_graph:
         self.selected_k = self.calc_criterion()
 
     def create_poolers(self):
+        """
+        Create a mapping from row indices to CLS vectors, starting from the available pool, followed by the current
+        train. Return the mapping and the size of the dictionary prefix containing the available pool.
+        """
         poolers_dict = self.create_poolers_available_pool()
         available_pool_size = len(poolers_dict)
         poolers_dict = self.create_poolers_current_train(poolers_dict, available_pool_size)
@@ -62,6 +66,9 @@ class LSH_graph:
         return poolers_dict, available_pool_size
 
     def create_poolers_available_pool(self):
+        """
+        Load the available pool CLS vectors and save a mapping from row indices (in the pooler file) to the CLSs
+        """
         poolers_dict = dict()
         # self.poolers_paths[0] is the poolers file of the available pool
         pooler_path = self.poolers_paths[0]
@@ -74,6 +81,9 @@ class LSH_graph:
         return poolers_dict
 
     def create_poolers_current_train(self, poolers_dict, available_pool_size):
+        """
+        Load the current train CLS vectors and insert them to the end of poolers dict.
+        """
         # self.poolers_paths[1] is the poolers file of the current train
         pooler_path = self.poolers_paths[1]
         preds_file = open(pooler_path, "r", encoding="utf-8")
@@ -85,6 +95,10 @@ class LSH_graph:
         return poolers_dict
 
     def create_labels(self):
+        """
+        Create a mapping from row indices to label, staring from the available pool labeled 2 for unknown label,
+        followed by the current train with the given labels.
+        """
         # for each pair in the available we assign the label 2 (unknown)
         labels_dict = {id_val: 2 for id_val in range(self.available_pool_size)}
         labels_file = open(self.files_path + 'current_train.txt', "r", encoding="utf-8")
@@ -95,6 +109,9 @@ class LSH_graph:
         return labels_dict
 
     def create_predictions(self):
+        """
+        Create a mapping from row indices to PREDICTED label, for the available pools.
+        """
         preditions_dict, confidence_dict = dict(), dict()
         pooler_path = self.poolers_paths[0]
         preds_file = open(pooler_path, "r", encoding="utf-8")
@@ -151,6 +168,10 @@ class LSH_graph:
     #     return buckets2poolers_dict, poolers2buckets_dict
 
     def create_buckets(self, rel_poolers_ids):
+        """
+        Perform LSH iteration: generate vector_num random hyperplanes and classify each pooler with respect to the
+        hyperplane, to a correspond bucket. Return a dictionary maps from buckets_ids to poolers_indices.
+        """
         rel_poolers = {pooler_id: pooler for pooler_id, pooler in
                        self.poolers.items() if pooler_id in rel_poolers_ids}
         vectors_num = max(int(log2((len(rel_poolers_ids)) / self.min_val)) - 1, 1)
@@ -242,9 +263,11 @@ class LSH_graph:
                         buckets2poolers[str(new_bucket_id) + '_' + bucket_id2] = bucket2
         return buckets2poolers, final_buckets2poolers, bucket_parents
 
-
     @staticmethod
     def create_connected_components(graph):
+        """
+        Generate indexed connected components
+        """
         graphs_dict = dict()
         connected_components = nx.connected_components(graph)
         for graph_id, cc in enumerate(connected_components):
@@ -260,12 +283,18 @@ class LSH_graph:
         return self.connected_components
 
     def get_light_connected_components(self, connected_components):
+        """
+        Generate and return a dictionary from CC_id to the poolers vectors in that CC
+        """
         light_dict = dict()
         for graph_id, graph in connected_components.items():
             light_dict[graph_id] = [self.poolers[pooler_id] for pooler_id in graph.nodes()]
         return light_dict
 
     def calc_CCS_available_pool_sizes(self, connected_components):
+        """
+        For each CC - calc the number of nodes originally from available_pool
+        """
         ccs_available_pool_sizes = dict()
         for graph_id, graph in connected_components.items():
             ccs_available_pool_sizes[graph_id] = len([pooler_id for pooler_id in graph.nodes() if
@@ -305,8 +334,8 @@ class LSH_graph:
         for graph_id, graph in new_connected_components.items():
             self.connected_components[graph_id + current_size] = graph
             self.ccs_available_pool_sizes[graph_id + current_size] = len([pooler_id for pooler_id in
-                                                                    graph.nodes() if pooler_id <
-                                                                    self.available_pool_size])
+                                                                          graph.nodes() if pooler_id <
+                                                                          self.available_pool_size])
         return
 
     def fix_small_connected_components(self):
@@ -355,6 +384,10 @@ class LSH_graph:
         return
 
     def assign_cc_labels(self, pos_threshold):
+        """
+        Assign a label for each CC. positive label for containing sufficient ratio of positive samples. Otherwise,
+        negative.
+        """
         connected_components_labels = dict()
         labels_weight = 1 - 0.05 * self.iter
         for graph_id, graph in self.connected_components.items():
@@ -380,10 +413,14 @@ class LSH_graph:
         return connected_components_labels
 
     def calc_CCs_type_size(self, cc_label):
+        """
+        Return a list with the CC_ids with cc_label.
+        In addition, return the sum of nodes in those CC.
+        """
         relevant_graph_ids = [graph_id for graph_id in self.connected_components.keys()
                               if self.cc_labels[graph_id] == cc_label]
         relevant_size = sum([len(self.connected_components[graph_id]) for graph_id in
-                        self.connected_components.keys() if graph_id in relevant_graph_ids])
+                             self.connected_components.keys() if graph_id in relevant_graph_ids])
         return relevant_graph_ids, relevant_size
 
     def distribute_budget(self):
@@ -392,6 +429,9 @@ class LSH_graph:
         return positive_budget_dict, negative_budget_dict
 
     def create_budget_dict(self, label, rel_graph_ids, rel_ccs_size):
+        """
+        Split the label-relative budget to the corresponded-labeled CCs with respect to the relative size.
+        """
         budget_dict = dict()
         total_used = 0
         rel_share = self.pos_budget if label == 1 else 1 - self.pos_budget
@@ -408,6 +448,9 @@ class LSH_graph:
 
     @staticmethod
     def assign_residue(budget_dict, residue, rel_graph_ids):
+        """
+        Given the budget dict and a budget residue, split the residue randomly between the CCs
+        """
         chosen_graph_ids = random.choices(rel_graph_ids, k=residue)
         for graph_id in chosen_graph_ids:
             budget_dict[graph_id] += 1
@@ -437,6 +480,9 @@ class LSH_graph:
 
     @staticmethod
     def initialize_graph(poolers_ids):
+        """
+        Initial a networkx graph
+        """
         graph = nx.Graph()
         graph.add_nodes_from(poolers_ids)
         return graph
@@ -454,6 +500,9 @@ class LSH_graph:
     #     return graph
 
     def graph_with_threshold(self, graph, buckets2poolers, sim_threshold):
+        """
+        Add edges between nodes where the cosine similarity is greater then sim_threshold, and only inside buckets.
+        """
         pairs_set = self.create_pairs_dict(buckets2poolers)
         pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in pairs_set]
         if self.mode == "top_k_cliques":
@@ -465,6 +514,9 @@ class LSH_graph:
         return graph
 
     def calc_pair_weight(self, pair):
+        """
+        calculate cosing similarity between a pair.
+        """
         pooler1 = self.poolers[pair[0]]
         pooler2 = self.poolers[pair[1]]
         return round(1 - spatial.distance.cosine(np.array(pooler1), np.array(pooler2)), 3)
@@ -478,6 +530,9 @@ class LSH_graph:
 
     @staticmethod
     def create_pairs_dict(buckets2poolers):
+        """
+        Generate a set of nodes pairs from each bucket
+        """
         pairs_dict = set()
         for bucket in buckets2poolers.values():
             pairs_dict.update(list(combinations(bucket, 2)))
@@ -516,6 +571,9 @@ class LSH_graph:
         return selected_k
 
     def calc_centrality(self, relevant_graph_ids):
+        """
+        Perform the require centrality calculation.
+        """
         if self.criterion == 'bc':
             return self.calc_betweenness_centrality(relevant_graph_ids)
         elif self.criterion == 'pagerank':
@@ -526,13 +584,17 @@ class LSH_graph:
         bc_dict = dict()
         for graph_id in relevant_graph_ids:
             bc_values = nx.betweenness_centrality(self.connected_components[graph_id],
-                                                          normalized=True, weight='weight')
+                                                  normalized=True, weight='weight')
             bc_dict[graph_id] = self.rank_it(bc_values)
             # selected_samples.extend(sorted(bc_dict, key=bc_dict.get, reverse=True)
             #                         [:relevant_budget_dict[graph_id]])
         return bc_dict
 
     def calc_pagerank_centrality(self, relevant_graph_ids):
+        """
+        Create a dict contains the relevant CC_ids as keys, and dicts, containing their nodes' pagerank ranking,
+        as values.
+        """
         # selected_samples = list()
         pagerank_dict = dict()
         for graph_id in relevant_graph_ids:
@@ -549,6 +611,9 @@ class LSH_graph:
         return pagerank_dict
 
     def calc_uncertainty(self, relevant_graph_ids):
+        """
+        Perform the require uncertainty calculation.
+        """
         if self.mode == "top_k_cliques":
             return self.calc_prediction_uncertainty(relevant_graph_ids)
         else:
@@ -596,6 +661,9 @@ class LSH_graph:
 
     @staticmethod
     def rank_it(input_dict):
+        """
+        Create a dictionary contains the poolers id as keys, and their rank w.r.t the measurement as values.
+        """
         sorted_items = sorted(input_dict.items(), key=lambda item: item[1], reverse=True)
         rank, count, previous, result = 0, 0, None, dict()
         for pooler_id, measurement_val in sorted_items:
