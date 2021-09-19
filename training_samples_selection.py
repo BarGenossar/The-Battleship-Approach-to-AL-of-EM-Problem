@@ -12,7 +12,7 @@ import os
 
 class TopKSelection:
     def __init__(self, task, SourceTask, k, iteration, mode, files_path,
-                 orig_train_path, seed, output_path, criterion='pagerank', intent_num=0):
+                 orig_train_path, seed, iterations, output_path, criterion='pagerank', intent_num=0):
         torch.manual_seed(seed)
         random.seed(seed)
         self.task = task
@@ -23,6 +23,7 @@ class TopKSelection:
         self.files_path = files_path
         self.orig_train = orig_train_path
         self.seed = seed
+        self.iterations = iterations
         self.intent = intent_num
         self.output_path = output_path
         self.criterion = criterion
@@ -36,7 +37,7 @@ class TopKSelection:
         # self.pairs_ids, self.ids_pairs = self.get_pairs_ids()
 
     def get_available_pool_ids(self):
-        if self.mode == "all_D":
+        if self.mode == "all_D" or "only_selected" in self.mode:
             return None
         if self.iter == 0:
             available_pool_ids = set([idx for idx in range(len(self.original_input))])
@@ -50,7 +51,7 @@ class TopKSelection:
         return available_pool_ids
 
     def get_available_pool(self):
-        if self.mode == "all_D":
+        if self.mode == "all_D" or "only_selected" in self.mode:
             return None, None
         available_pool = []
         pool_to_original = dict()
@@ -87,7 +88,9 @@ class TopKSelection:
         self.available_pool, self.pool_to_original = self.get_available_pool()
 
     def get_new_train_ids(self):
-        if self.mode == "all_D" or self.iter == 0:
+        if "only_selected" in self.mode:
+            return self.find_all_selected()
+        elif self.mode == "all_D" or self.iter == 0:
             return None
         elif self.mode == "random":
             selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
@@ -98,6 +101,21 @@ class TopKSelection:
         self.update_pool_pkl(selected_samples)
         self.save_to_pkl(selected_samples, "selected_k_pool_to_original")
         return updated_train_ids
+
+    def find_all_selected(self):
+        selected_ids = set()
+        base_mode = self.mode.split("/")[0]
+        current_path = self.output_path + base_mode + "/pkl_files/selected_k_pool_to_original_iter"
+        for current_iter in range(1, iterations + 1):
+            selected_ids.update(self.read_selected_k_pkl_file(current_iter, current_path))
+        return selected_ids
+
+    def read_selected_k_pkl_file(self, current_iter, current_path):
+        pkl_file = open(current_path + str(current_iter) + "_seed" +
+                        str(self.seed) + ".pkl", 'rb')
+        required_file = pickle.load(pkl_file)
+        pkl_file.close()
+        return required_file
 
     def read_source_dataset(self, source_task):
         source_dataset_file = self.find_file(source_task)
@@ -120,6 +138,8 @@ class TopKSelection:
     def get_new_train(self):
         if self.mode == "all_D":
             return self.original_input
+        elif "only_selected" in self.mode:
+            return self.read_only_selected()
         current_train = self.read_source_dataset(self.source_task)
         if self.iter >= 1:
             for idx, pair in enumerate(self.original_input):
@@ -128,6 +148,14 @@ class TopKSelection:
             random.seed(self.seed)
             random.shuffle(current_train)
         return current_train
+
+    def read_only_selected(self):
+        current_train = []
+        for idx, pair in enumerate(self.original_input):
+            if idx in self.current_train_ids:
+                current_train.append(pair)
+        return current_train
+
 
     def get_pairs_ids(self):
         pairs_ids_dict, ids_pairs_dict = dict(), dict()
@@ -167,7 +195,8 @@ class TopKSelection:
         return poolers_path
 
     def write_pairs2file(self, pairs_type):
-        if self.mode == "all_D" and pairs_type == 'pool':
+        if (self.mode == "all_D" or "only_selected" in self.mode) and \
+                pairs_type == 'pool':
             return
         source_task = self.output_path.split('/')[-2]
         documentation_path = self.files_path + source_task + "/" + self.mode + "/"
@@ -212,15 +241,16 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
-    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
+    parser.add_argument("--task", type=str, default="Structured/Walmart-Amazon")
+    parser.add_argument("--source_task", type=str, default="Structured/Amazon-Google")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
-    parser.add_argument("--iter_num", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="top_k")
+    parser.add_argument("--iter_num", type=int, default=0)
+    parser.add_argument("--mode", type=str, default="top_k_threshold/only_selected")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/")
+    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/")
     start = time.time()
     hp = parser.parse_args()
 
@@ -231,6 +261,10 @@ if __name__ == "__main__":
     iter_num = hp.iter_num
     selection_mode = hp.mode
     seed = hp.seed
+
+    # if "only_selected" in mode then iterations = 0 in the call for main.sh but in this file it must be
+    # the original number of iterations
+    iterations = hp.iterations
     criterion = hp.criterion
     output_path = hp.output_path
 
@@ -241,7 +275,7 @@ if __name__ == "__main__":
     orig_train = configs[task + str(intent)]['trainset']
     source_task += str(intent)
     top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode,
-                                  path, orig_train, seed, output_path, criterion)
+                                  path, orig_train, seed, iterations, output_path, criterion)
     end = time.time()
 
     print(f'The process took :{round(end - start, 2)} seconds')
