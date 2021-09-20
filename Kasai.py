@@ -1,6 +1,7 @@
 import re
 import math
 
+
 class Kasai:
     def __init__(self, available_pool_path, k):
         self.available_pool_path = available_pool_path
@@ -25,7 +26,7 @@ class Kasai:
             confidence = float(re.sub("[^0-9.]", "", line.split("match_confidence")[1].split("pooler")[0]))
             prediction = int(re.sub("[^0-9]", "", line.split("\"match\"")[1][3]))
             p = abs(1 - prediction - confidence)
-            h = -p * math.log(p) - (1 - p) * math.log(1 - p)
+            h = self.calc_entropy(p)
             (d_plus if prediction else d_minus)[id_val] = h
         preds_file.close()
         return d_plus, d_minus
@@ -41,3 +42,10 @@ class Kasai:
             likely_false.add(d_items[i][0])
             high_confidence.add(d_items[-(i + 1)][0])
         return likely_false, high_confidence
+
+    @staticmethod
+    def calc_entropy(p):
+        try:
+            return -p * math.log(p) - (1 - p) * math.log(1 - p)
+        except:
+            return 0
