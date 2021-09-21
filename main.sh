@@ -11,12 +11,19 @@ TaskName="Structured/Amazon-Google"
 SourceTask="Structured/Walmart-Amazon"
 
 # Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D"
-# Another option is "*mode*/only_selected". In this option the model is trained only with
-#   the final set of selected samples, ignoring ones from D'. It can be used only if we
-#   already trained before a model with "*mode*", for example "top_k_threshold/only_selected"
 #
+
+# More options:
+
+# (1) "*mode*/only_selected". In this option the model is trained only with the final set of selected samples,
+#    ignoring ones from D'. It can be used only if we already trained before a model with "*mode*",
+#    for example "top_k_threshold/only_selected"
+# (2) "*mode*/D_rep". In each iteration samples from (D') are removed (determined according to
+#     replace_param in TopKSelection)
+
 # For "all_D" and "*mode*/only_selected" set Iterations = 0
-Mode="random"
+
+Mode="top_k_threshold/D_rep"
 
 InputPath="data/er_magellan/Structured/Amazon-Google/"
 OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"

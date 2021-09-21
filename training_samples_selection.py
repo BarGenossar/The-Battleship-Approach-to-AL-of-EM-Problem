@@ -9,26 +9,31 @@ import argparse
 import json
 import torch
 import os
+import re
 
 
 class TopKSelection:
     def __init__(self, task, SourceTask, k, iteration, mode, files_path,
-                 orig_train_path, seed, iterations, output_path, criterion='pagerank', intent_num=0):
+                 orig_train_path, seed, iterations, output_path,
+                 criterion='pagerank', intent_num=0, replace_param=1):
         torch.manual_seed(seed)
         random.seed(seed)
         self.task = task  # The name of the target task
         self.source_task = SourceTask  # The name of the source task
         self.k = k  # How many samples to choose
-        self.iter = iteration  # How many iterations to perform (total samples = k * iterations)
+        self.iter = iteration  # The number of the current iteration
         self.mode = mode  # How to choose samples
         self.files_path = files_path  # Path to the location where input data is and where raw data saved
         self.orig_train = orig_train_path  # Full path to train data
         self.seed = seed  # Seed
-        self.iterations = iterations
+        self.iterations = iterations # The total number of iterations to perform
         self.intent = intent_num  # FlexER
-        self.output_path = output_path
         # Path to location where the current train, available pool and test will be saved
+        self.output_path = output_path
         self.criterion = criterion  # Criterion for centrality calculation
+        # How many samples from D' are removed in a single iteration (where D_rep in mode)
+        self.replaced_samples_size = replace_param * k
+
         self.original_input = self.get_original_input(self.orig_train)  # Raw training input pairs
         self.available_pool_ids = self.get_available_pool_ids()
         # Row indices of available pool (as appeared in the original data)
@@ -36,6 +41,8 @@ class TopKSelection:
         # List of records available for pooling, and their corresponding indices in the original file.
         self.current_train_ids, self.high_confidence_positive, self.high_confidence_negative = self.handle_new_train_ids()
         # high_confidence_positive, high_confidence_negative are available only in case of self.mode = top_k_Kasai
+        self.D_prime_neg_labels = self.get_D_prime_neg_labels()
+        self.removed_from_D_prime = self.get_removed_idxs()
         self.current_train = self.get_new_train()  # List of records to train on, from source and target.
         self.write_pairs2file('pool')
         self.write_pairs2file('train')
@@ -167,17 +174,19 @@ class TopKSelection:
         pkl_file.close()
         return required_file
 
-    def read_source_dataset(self, source_task):
+    def read_source_dataset(self):
         """
         Return a list contains record pairs from source task training file.
         """
-        source_dataset_file = self.find_file(source_task)
-        source_dataset = open(source_dataset_file, "r", encoding="utf-8")
-        source_lines = source_dataset.readlines()
-        source_dataset.close()
         current_train = []
-        for pair in source_lines:
-            current_train.append(pair)
+        source_lines = self.get_source_lines()
+        if "D_rep" not in self.mode or self.iter == 0:
+            for pair in source_lines:
+                current_train.append(pair)
+        else:
+            for id_val, pair in enumerate(source_lines):
+                if id_val not in self.removed_from_D_prime:
+                    current_train.append(pair)
         return current_train
 
     @staticmethod
@@ -191,15 +200,67 @@ class TopKSelection:
         source_dataset_file = config['trainset']
         return source_dataset_file
 
+    def get_D_prime_neg_labels(self):
+        if "D_rep" not in self.mode:
+            return None
+        D_prime_neg_idx = set()
+        source_lines = self.get_source_lines()
+        for id_val, line in enumerate(source_lines):
+            if int(re.sub("[^0-9]", "", line[-2])) == 0:
+                D_prime_neg_idx.add(id_val)
+        return D_prime_neg_idx
+
+    def get_source_lines(self):
+        source_dataset_file = self.find_file(self.source_task)
+        source_dataset = open(source_dataset_file, "r", encoding="utf-8")
+        source_lines = source_dataset.readlines()
+        source_dataset.close()
+        return source_lines
+
+    def get_removed_idxs(self):
+        if self.iter == 0 or "D_rep" not in self.mode:
+            return None
+        else:
+            current_path = self.output_path + self.mode + "/pkl_files/removed_from_D_prime.pkl"
+            if self.iter == 1:
+                return self.initialize_removed_idxs(current_path)
+            else:
+                return self.update_removed_idxs(current_path)
+
+    def initialize_removed_idxs(self, current_path):
+        random.seed(self.seed)
+        removed_idxs = set(random.sample(self.D_prime_neg_labels, self.replaced_samples_size))
+        self.update_removed_file(current_path, removed_idxs)
+        return removed_idxs
+
+    @staticmethod
+    def update_removed_file(current_path, removed_idxs):
+        output = open(current_path, 'wb')
+        pickle.dump(removed_idxs, output)
+        output.close()
+        return
+
+    def update_removed_idxs(self, current_path):
+        random.seed(self.seed)
+        pkl_file = open(current_path, 'rb')
+        removed_idxs = pickle.load(pkl_file)
+        pkl_file.close()
+        candidates_for_removal = {idx for idx in self.D_prime_neg_labels if idx not in removed_idxs}
+        just_removed = set(random.sample(candidates_for_removal, self.replaced_samples_size))
+        removed_idxs.update(just_removed)
+        self.update_removed_file(current_path, removed_idxs)
+        return removed_idxs
+
     def get_new_train(self):
         """
-        Return a shuffled list of records to train on, contains the source task data and the recently chosen records from the target task data.
+        Return a shuffled list of records to train on, contains the source task data and the recently chosen records
+        from the target task data.
         """
         if self.mode == "all_D":
             return self.original_input
         elif "only_selected" in self.mode:
             return self.read_only_selected()
-        current_train = self.read_source_dataset(self.source_task)
+        current_train = self.read_source_dataset()
         if self.iter >= 1:
             for idx, pair in enumerate(self.original_input):
                 if idx in self.current_train_ids:
@@ -345,16 +406,16 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="WDC/wdc_shoes_title_small")
-    parser.add_argument("--source_task", type=str, default="WDC/wdc_computers_title_small")
+    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
+    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
     parser.add_argument("--iter_num", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="top_k_Kasai")
+    parser.add_argument("--mode", type=str, default="top_k_threshold/D_rep")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/wdc/shoes/title/computers/")
+    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/")
     start = time.time()
     hp = parser.parse_args()
 
@@ -374,7 +435,6 @@ if __name__ == "__main__":
 
     configs = json.load(open('configs.json'))
     configs = {conf['name']: conf for conf in configs}
-
     path = configs[task + str(intent)]['path']
     orig_train = configs[task + str(intent)]['trainset']
     source_task += str(intent)
