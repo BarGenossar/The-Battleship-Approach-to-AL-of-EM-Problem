@@ -7,26 +7,25 @@ Iterations=$2;
 
 Seeds=$3;
 
-TaskName="Structured/Amazon-Google"
-SourceTask="Structured/Walmart-Amazon"
+TaskName="Structured/Walmart-Amazon"
+SourceTask="Structured/Amazon-Google"
 
-# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D"
+# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D", "top_k_kasai"
 #
 
 # More options:
 
-# (1) "*mode*/only_selected". In this option the model is trained only with the final set of selected samples,
-#    ignoring ones from D'. It can be used only if we already trained before a model with "*mode*",
-#    for example "top_k_threshold/only_selected"
-# (2) "*mode*/D_rep". In each iteration samples from (D') are removed (determined according to
-#     replace_param in TopKSelection)
+# (1)   "*mode*/only_selected". In this option the model is trained only with the final set of selected samples,
+#       ignoring ones from D'. It can be used only if we already trained before a model with "*mode*",
+#       for example "top_k_threshold/only_selected"
+# (2)   "*mode*/D_rep". In each iteration samples from (D') are removed (determined according to
+#       replace_param in TopKSelection)
 
 # For "all_D" and "*mode*/only_selected" set Iterations = 0
 
-Mode="top_k_threshold/D_rep"
-
-InputPath="data/er_magellan/Structured/Amazon-Google/"
-OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"
+Mode="top_k_cliques"
+InputPath="data/er_magellan/Structured/Walmart-Amazon/"
+OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"

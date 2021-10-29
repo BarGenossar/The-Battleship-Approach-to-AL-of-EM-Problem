@@ -26,7 +26,7 @@ class TopKSelection:
         self.files_path = files_path  # Path to the location where input data is and where raw data saved
         self.orig_train = orig_train_path  # Full path to train data
         self.seed = seed  # Seed
-        self.iterations = iterations # The total number of iterations to perform
+        self.iterations = iterations  # The total number of iterations to perform
         self.intent = intent_num  # FlexER
         # Path to location where the current train, available pool and test will be saved
         self.output_path = output_path
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
     parser.add_argument("--iter_num", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="top_k_threshold/D_rep")
+    parser.add_argument("--mode", type=str, default="top_k_cliques")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--criterion", type=str, default="pagerank")

@@ -18,7 +18,7 @@ class LSH_graph:
                  mode='top_k', weights_type='with_threshold', vectors_num=10,
                  lsh_iterations=5, dim=768, pos_threshold_cond=0.5,
                  pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.4,
-                 adapted_sim_threshold=0.9, min_cc_ratio=2 / 100, max_cc_ratio=10 / 100,
+                 adapted_sim_threshold=0.9, min_cc_ratio=5/100, max_cc_ratio=25/100,
                  selection_param=0.5):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -31,28 +31,41 @@ class LSH_graph:
         self.weights_type = weights_type
         self.dim = dim
         self.lsh_iterations = lsh_iterations
-        self.pos_budget = pos_budget
+        self.pos_budget = 1-0.05*iteration
         self.edges_threshold = edges_threshold
         self.sim_threshold = sim_threshold
         self.adapted_sim_threshold = adapted_sim_threshold
         self.criterion = criterion
         self.mode = mode
         self.poolers, self.available_pool_size = self.create_poolers()
-        self.min_val = int(min_cc_ratio * self.available_pool_size)  # The actual size of the smallest CC possible
-        self.max_val = int(max_cc_ratio * self.available_pool_size)  # The actual size of the largest CC possible
         self.vectors_num = vectors_num  # LSH vectors
         self.selection_param = selection_param
         self.training_labels = self.create_labels()
-        # self.poolers_ids = self.create_poolers_ids_list()
         self.pool_predictions, self.confidence_dict = self.create_predictions()
-        self.graph, self.connected_components, self.ccs_available_pool_sizes = self.from_lsh2graph(self.poolers.keys())
-        self.connected_components = self.validate_connected_components()
-        self.cc_labels = self.assign_cc_labels(pos_threshold_cond)
-        self.old_connected_components = self.clean_old_train()
-        self.positive_graph_ids, self.positive_CCs_size = self.calc_CCs_type_size(1)
-        self.negative_graph_ids, self.negative_CCs_size = self.calc_CCs_type_size(0)
-        self.positive_budget_dict, self.negative_budget_dict = self.distribute_budget()
+        self.pos_labels_ids = {pooler_id for pooler_id in self.training_labels.keys()
+                               if self.training_labels[pooler_id]}
+        self.neg_labels_ids = {pooler_id for pooler_id in self.training_labels.keys()
+                               if not self.training_labels[pooler_id]}
+        self.pos_preds_ids = {pooler_id for pooler_id in self.pool_predictions.keys()
+                              if self.pool_predictions[pooler_id]}
+        self.neg_preds_ids = {pooler_id for pooler_id in self.pool_predictions.keys()
+                              if not self.pool_predictions[pooler_id]}
+        self.min_val = int(min_cc_ratio * len(self.pos_preds_ids))  # The actual size of the smallest CC possible
+        self.max_val = int(max_cc_ratio * len(self.pos_preds_ids))  # The actual size of the largest CC possible
+        # self.graph, self.connected_components, self.ccs_available_pool_sizes = self.from_lsh2graph(self.poolers.keys())
+        self.pos_graph, self.pos_connected_components, self.pos_ccs_available_pool_sizes = self.from_lsh2graph_type(1)
+        self.neg_graph, self.neg_connected_components, self.neg_ccs_available_pool_sizes = self.from_lsh2graph_type(0)
+        self.validate_connected_components()
+        # self.cc_labels = self.assign_cc_labels(pos_threshold_cond)
+        self.pos_old_connected_components = self.clean_old_train_pos()
+        self.neg_old_connected_components = self.clean_old_train_neg()
+        # self.positive_graph_ids, self.positive_CCs_size = self.calc_CCs_type_size(1)
+        # self.negative_graph_ids, self.negative_CCs_size = self.calc_CCs_type_size(0)
+        # self.positive_budget_dict, self.negative_budget_dict = self.distribute_budget()
+        self.positive_budget_dict = self.distribute_budget(1)
+        self.negative_budget_dict = self.distribute_budget(0)
         self.selected_k = self.calc_criterion()
+        # self.selected_k = self.calc_criterion_pos()
 
     def create_poolers(self):
         """
@@ -125,7 +138,6 @@ class LSH_graph:
         return preditions_dict, confidence_dict
 
     def from_lsh2graph(self, poolers_ids):
-        # poolers_ids = {pooler_id for pooler_id in self.poolers.keys()}
         buckets2poolers = self.create_buckets(poolers_ids)
         final_buckets2poolers, bucket_parents = self.iteative_bucketing(buckets2poolers)
         graph = self.initialize_graph(poolers_ids)
@@ -139,6 +151,29 @@ class LSH_graph:
                           ccs_available_pool_sizes, buckets2poolers, bucket_parents],
                          ["final_buckets2poolers", "orig_connected_components(light)",
                           "ccs_available_pool_sizes", "orig_buckets2poolers", "bucket_parents"])
+        return graph, connected_components, ccs_available_pool_sizes
+
+    def from_lsh2graph_type(self, label_type):
+        # poolers_ids = {pooler_id for pooler_id in self.training_labels.keys()
+        #                if self.training_labels[pooler_id] == 1}
+        # poolers_ids.update({pooler_id for pooler_id in self.pool_predictions.keys()
+        #                     if self.pool_predictions[pooler_id]})
+        rel_ids = self.pos_preds_ids if label_type == 1 else self.neg_preds_ids
+        suffix = str(label_type)
+        buckets2poolers = self.create_buckets(rel_ids)
+        final_buckets2poolers, bucket_parents = self.iteative_bucketing(buckets2poolers)
+        graph = self.initialize_graph(rel_ids)
+        # graph = self.create_graph_edges(graph, lsh_iterations, final_buckets2poolers,
+        #                                 edges_threshold, sim_threshold)
+        graph = self.graph_with_threshold(graph, final_buckets2poolers, self.sim_threshold)
+        connected_components = self.create_connected_components(graph)
+        light_conncted_components = self.get_light_connected_components(connected_components)
+        ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes(connected_components)
+        self.save_to_pkl([final_buckets2poolers, light_conncted_components,
+                          ccs_available_pool_sizes, buckets2poolers, bucket_parents],
+                         ["final_buckets2poolers" + suffix, "orig_connected_components(light)" + suffix,
+                          "ccs_available_pool_sizes" + suffix, "orig_buckets2poolers" + suffix,
+                          "bucket_parents" + suffix])
         return graph, connected_components, ccs_available_pool_sizes
 
     # def validate_lsh(self, ccs_available_pool_sizes):
@@ -169,15 +204,14 @@ class LSH_graph:
 
     def create_buckets(self, rel_poolers_ids):
         """
-        Perform LSH iteration: generate vector_num random hyperplanes and classify each pooler with respect to the
-        hyperplane, to a correspond bucket. Return a dictionary maps from buckets_ids to poolers_indices.
+        Perform LSH iteration: generate vector_num random hyperplanes and classify each pooler to a bucket
+        according to its spatial representation, with respect to the intersection of the vectors.
+        Return a dictionary maps from buckets_ids to poolers_indices.
         """
         rel_poolers = {pooler_id: pooler for pooler_id, pooler in
                        self.poolers.items() if pooler_id in rel_poolers_ids}
         vectors_num = max(int(log2((len(rel_poolers_ids)) / self.min_val)) - 1, 1)
         buckets2poolers_dict = dict()
-        # poolers2buckets_dict = {pooler_id: [] for pooler_id in rel_poolers.nodes()}
-        # np.random.seed(seed=self.seed)
         random_vecs = np.random.randn(vectors_num, self.dim)
         for pooler_id, pooler_vec in rel_poolers.items():
             bucket_id = self.classify_pooler(pooler_vec, random_vecs)
@@ -276,15 +310,19 @@ class LSH_graph:
 
     def validate_connected_components(self):
         # self.fix_large_connected_components()
-        self.fix_small_connected_components()
-        light_conncted_components = self.get_light_connected_components(self.connected_components)
-        self.save_to_pkl([light_conncted_components, self.connected_components],
-                         ["final_connected_components(light)", "final_connected_components"])
-        return self.connected_components
+        self.fix_small_connected_components(1)
+        self.fix_small_connected_components(0)
+        light_conncted_components_pos = self.get_light_connected_components(self.pos_connected_components)
+        light_conncted_components_neg = self.get_light_connected_components(self.neg_connected_components)
+        self.save_to_pkl([light_conncted_components_pos, light_conncted_components_neg,
+                          self.pos_connected_components, self.neg_connected_components],
+                         ["final_connected_components(light1)", "final_connected_components(light0)",
+                          "final_connected_components_pos", "final_connected_components_neg"])
+        return
 
     def get_light_connected_components(self, connected_components):
         """
-        Generate and return a dictionary from CC_id to the poolers vectors in that CC
+        Generate a dictionary with connected components ids as keys and corresponding poolers vectors as values
         """
         light_dict = dict()
         for graph_id, graph in connected_components.items():
@@ -338,10 +376,12 @@ class LSH_graph:
                                                                           self.available_pool_size])
         return
 
-    def fix_small_connected_components(self):
-        ccs_copy = self.connected_components.copy()
-        ccs_available_pool_copy = self.ccs_available_pool_sizes.copy()
-        ccs_centroids = self.calc_centroids()
+    def fix_small_connected_components(self, label_type):
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 \
+            else self.neg_connected_components.copy()
+        ccs_available_pool_copy = self.pos_ccs_available_pool_sizes.copy() if label_type == 1 \
+            else self.neg_ccs_available_pool_sizes.copy()
+        ccs_centroids = self.calc_centroids(label_type)
         small_connected_components = {graph_id: graph for graph_id, graph in ccs_copy.items()
                                       if ccs_available_pool_copy[graph_id] < self.min_val}
         legit_connected_components = {graph_id for graph_id in ccs_copy.keys()
@@ -349,14 +389,21 @@ class LSH_graph:
         for graph_id, graph in small_connected_components.items():
             closest_graph_id = self.find_closest_cc(graph_id, ccs_centroids,
                                                     legit_connected_components)
-            self.connect_small_to_legit(graph, closest_graph_id)
-            self.connected_components.pop(graph_id)
-            self.ccs_available_pool_sizes.pop(graph_id)
+            self.connect_small_to_legit(graph, closest_graph_id, label_type)
+            ccs_copy.pop(graph_id)
+            ccs_available_pool_copy.pop(graph_id)
+        if label_type:
+            self.pos_connected_components = ccs_copy
+            self.pos_ccs_available_pool_sizes = ccs_available_pool_copy
+        else:
+            self.neg_connected_components = ccs_copy
+            self.neg_ccs_available_pool_sizes = ccs_available_pool_copy
         return
 
-    def calc_centroids(self):
-        ccs_centroids = dict.fromkeys(self.connected_components.keys())
-        for graph_id, graph in self.connected_components.items():
+    def calc_centroids(self, label_type):
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        ccs_centroids = dict.fromkeys(ccs_copy.keys())
+        for graph_id, graph in ccs_copy.items():
             poolers_list = [self.poolers[pooler_id] for pooler_id in graph.nodes()]
             ccs_centroids[graph_id] = list(np.mean(poolers_list, axis=0))
         return ccs_centroids
@@ -370,8 +417,9 @@ class LSH_graph:
                      for cc_id in legit_connected_components]
         return sorted(distances, key=lambda x: x[1])[0][0]
 
-    def connect_small_to_legit(self, graph, closest_graph_id):
-        closest_graph = self.connected_components[closest_graph_id].copy()
+    def connect_small_to_legit(self, graph, closest_graph_id, label_type):
+        closest_graph = self.pos_connected_components[closest_graph_id].copy() if label_type == 1 else \
+                        self.neg_connected_components[closest_graph_id].copy()
         # for each node from the small graph connect it with an edge to a
         # random node from the closest legit graph
         np.random.seed(seed=self.seed)
@@ -380,16 +428,20 @@ class LSH_graph:
         for node1, node2 in zip(graph.nodes(), selected_nodes):
             edges_list.append((node1, node2, self.calc_pair_weight((node1, node2))))
         closest_graph.add_weighted_edges_from(edges_list)
-        self.connected_components[closest_graph_id] = closest_graph
+        if label_type:
+            self.pos_connected_components[closest_graph_id] = closest_graph
+        else:
+            self.neg_connected_components[closest_graph_id] = closest_graph
         return
 
     def assign_cc_labels(self, pos_threshold):
         """
-        Assign a label for each CC. positive label for containing sufficient ratio of positive samples. Otherwise,
-        negative.
+        Assign a label for each CC. positive label for containing sufficient ratio of positive samples,
+        negative otherwise.
         """
         connected_components_labels = dict()
-        labels_weight = 1 - 0.05 * self.iter
+        # labels_weight = 1 - 0.05 * self.iter
+        labels_weight = 0.5
         for graph_id, graph in self.connected_components.items():
             cc_labels = {node_id: self.training_labels[node_id] for node_id in graph.nodes()}
             cc_predictions = {node_id: self.pool_predictions[node_id] for node_id in graph.nodes()
@@ -423,28 +475,45 @@ class LSH_graph:
                              self.connected_components.keys() if graph_id in relevant_graph_ids])
         return relevant_graph_ids, relevant_size
 
-    def distribute_budget(self):
-        positive_budget_dict = self.create_budget_dict(1, self.positive_graph_ids, self.positive_CCs_size)
-        negative_budget_dict = self.create_budget_dict(0, self.negative_graph_ids, self.negative_CCs_size)
-        return positive_budget_dict, negative_budget_dict
+    # def distribute_budget(self):
+    #     positive_budget_dict = self.create_budget_dict(1, self.positive_graph_ids, self.positive_CCs_size)
+    #     negative_budget_dict = self.create_budget_dict(0, self.negative_graph_ids, self.negative_CCs_size)
+    #     return positive_budget_dict, negative_budget_dict
 
-    def create_budget_dict(self, label, rel_graph_ids, rel_ccs_size):
-        """
-        Split the label-relative budget to the corresponded-labeled CCs with respect to the relative size.
-        """
+    def distribute_budget(self, label_type):
+        cc_copy = self.pos_connected_components if label_type == 1 else self.neg_connected_components
+        rel_budget = self.pos_budget if label_type == 1 else 1 - self.pos_budget
+        total_elements = sum([len(cc) for cc in cc_copy.values()])
         budget_dict = dict()
         total_used = 0
-        rel_share = self.pos_budget if label == 1 else 1 - self.pos_budget
-        total_budget = round(self.k * rel_share)
-        for graph_id, graph_label in self.cc_labels.items():
-            if graph_id in rel_graph_ids:
-                relative_share = len(self.connected_components[graph_id]) / rel_ccs_size
-                budget = int(relative_share * total_budget)
-                budget_dict[graph_id] = budget
-                total_used += budget
+        total_budget = round(self.k * rel_budget)
+        for graph_id, graph_elements in cc_copy.items():
+            relative_share = len(graph_elements) / total_elements
+            budget = int(relative_share * total_budget)
+            budget_dict[graph_id] = budget
+            total_used += budget
         if total_used < total_budget:
-            budget_dict = self.assign_residue(budget_dict, total_budget - total_used, rel_graph_ids)
+            budget_dict = self.assign_residue(budget_dict, total_budget - total_used,
+                                              list(cc_copy.keys()))
         return budget_dict
+
+    # def create_budget_dict(self, label, rel_graph_ids, rel_ccs_size):
+    #     """
+    #     Split the label-relative budget to the corresponded-labeled CCs with respect to the relative size.
+    #     """
+    #     budget_dict = dict()
+    #     total_used = 0
+    #     rel_share = self.pos_budget if label == 1 else 1 - self.pos_budget
+    #     total_budget = round(self.k * rel_share)
+    #     for graph_id, graph_label in self.cc_labels.items():
+    #         if graph_id in rel_graph_ids:
+    #             relative_share = len(self.connected_components[graph_id]) / rel_ccs_size
+    #             budget = int(relative_share * total_budget)
+    #             budget_dict[graph_id] = budget
+    #             total_used += budget
+    #     if total_used < total_budget:
+    #         budget_dict = self.assign_residue(budget_dict, total_budget - total_used, rel_graph_ids)
+    #     return budget_dict
 
     @staticmethod
     def assign_residue(budget_dict, residue, rel_graph_ids):
@@ -538,27 +607,43 @@ class LSH_graph:
             pairs_dict.update(list(combinations(bucket, 2)))
         return pairs_dict
 
-    def clean_old_train(self):
+    def clean_old_train_pos(self):
         # Every connected components in old_connected_components includes the training samples in
         # addition the the available pool. They are essential for the uncertainty calculation.
         removal_dict = dict()
-        old_connected_components = self.connected_components.copy()
-        for graph_id in self.connected_components.keys():
-            current_graph = self.connected_components[graph_id].copy()
+        old_connected_components = self.pos_connected_components.copy()
+        for graph_id in self.pos_connected_components.keys():
+            current_graph = self.pos_connected_components[graph_id].copy()
             removal_dict[graph_id] = [node_id for node_id in current_graph.nodes()
                                       if node_id >= self.available_pool_size]
         for graph_id in removal_dict.keys():
-            current_graph = self.connected_components[graph_id].copy()
+            current_graph = self.pos_connected_components[graph_id].copy()
             current_graph.remove_nodes_from(removal_dict[graph_id])
-            self.connected_components[graph_id] = current_graph
-        self.save_to_pkl([self.connected_components], ["final_clean_connected_components"])
+            self.pos_connected_components[graph_id] = current_graph
+        self.save_to_pkl([self.pos_connected_components], ["final_clean_connected_components"])
+        return old_connected_components
+
+    def clean_old_train_neg(self):
+        # Every connected components in old_connected_components includes the training samples in
+        # addition the the available pool. They are essential for the uncertainty calculation.
+        removal_dict = dict()
+        old_connected_components = self.neg_connected_components.copy()
+        for graph_id in self.neg_connected_components.keys():
+            current_graph = self.neg_connected_components[graph_id].copy()
+            removal_dict[graph_id] = [node_id for node_id in current_graph.nodes()
+                                      if node_id >= self.available_pool_size]
+        for graph_id in removal_dict.keys():
+            current_graph = self.neg_connected_components[graph_id].copy()
+            current_graph.remove_nodes_from(removal_dict[graph_id])
+            self.neg_connected_components[graph_id] = current_graph
+        self.save_to_pkl([self.neg_connected_components], ["final_clean_connected_components"])
         return old_connected_components
 
     def calc_criterion(self):
-        pos_centrality = self.calc_centrality(self.positive_graph_ids)
-        neg_centrality = self.calc_centrality(self.negative_graph_ids)
-        pos_uncertainty = self.calc_uncertainty(self.positive_graph_ids)
-        neg_uncertainty = self.calc_uncertainty(self.negative_graph_ids)
+        pos_centrality = self.calc_centrality(1)
+        neg_centrality = self.calc_centrality(0)
+        pos_uncertainty = self.calc_uncertainty(1)
+        neg_uncertainty = self.calc_uncertainty(0)
         pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
                                             self.positive_graph_ids,
                                             self.positive_budget_dict, True)
@@ -570,77 +655,96 @@ class LSH_graph:
                          ["pos_centrality", "neg_centrality", "pos_uncertainty", "neg_uncertainty", "selected_k"])
         return selected_k
 
-    def calc_centrality(self, relevant_graph_ids):
+    def calc_criterion_pos(self):
+        pos_centrality = self.calc_centrality(self.connected_components.keys())
+        pos_uncertainty = self.calc_uncertainty(self.connected_components.keys())
+        pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
+                                            self.connected_components.keys(),
+                                            self.positive_budget_dict, True)
+        neg_ids = [pooler_id for pooler_id in self.pool_predictions.keys() if not self.pool_predictions[pooler_id]]
+        np.random.seed(seed=self.seed)
+        neg_selected = list(np.random.choice(neg_ids, round(self.k * (1 - self.pos_budget)), replace=False))
+        selected_k = pos_selected + neg_selected
+        self.save_to_pkl([pos_centrality, pos_uncertainty, selected_k],
+                         ["pos_centrality", "pos_uncertainty", "selected_k"])
+        return selected_k
+
+    def calc_centrality(self, label_type):
         """
         Perform the require centrality calculation.
         """
         if self.criterion == 'bc':
-            return self.calc_betweenness_centrality(relevant_graph_ids)
+            return self.calc_betweenness_centrality(label_type)
         elif self.criterion == 'pagerank':
-            return self.calc_pagerank_centrality(relevant_graph_ids)
+            return self.calc_pagerank_centrality(label_type)
 
-    def calc_betweenness_centrality(self, relevant_graph_ids):
+    def calc_betweenness_centrality(self, label_type):
         # selected_samples = list()
         bc_dict = dict()
-        for graph_id in relevant_graph_ids:
-            bc_values = nx.betweenness_centrality(self.connected_components[graph_id],
-                                                  normalized=True, weight='weight')
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        for graph_id in ccs_copy.keys():
+            bc_values = nx.betweenness_centrality(ccs_copy[graph_id], normalized=True, weight='weight')
             bc_dict[graph_id] = self.rank_it(bc_values)
             # selected_samples.extend(sorted(bc_dict, key=bc_dict.get, reverse=True)
             #                         [:relevant_budget_dict[graph_id]])
         return bc_dict
 
-    def calc_pagerank_centrality(self, relevant_graph_ids):
+    def calc_pagerank_centrality(self, label_type):
         """
         Create a dict contains the relevant CC_ids as keys, and dicts, containing their nodes' pagerank ranking,
         as values.
         """
         # selected_samples = list()
         pagerank_dict = dict()
-        for graph_id in relevant_graph_ids:
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        for graph_id in ccs_copy.keys():
             flag = 0
             tolerance = 1e-06
             while not flag:
                 try:
-                    pagerank_values = nx.pagerank(self.connected_components[graph_id],
-                                                  tol=tolerance, weight='weight')
+                    pagerank_values = nx.pagerank(ccs_copy[graph_id], tol=tolerance, weight='weight')
                     flag = 1
                 except:
                     tolerance *= 2
             pagerank_dict[graph_id] = self.rank_it(pagerank_values)
         return pagerank_dict
 
-    def calc_uncertainty(self, relevant_graph_ids):
+    def calc_uncertainty(self, label_type):
         """
         Perform the require uncertainty calculation.
         """
-        if self.mode == "top_k_cliques":
-            return self.calc_prediction_uncertainty(relevant_graph_ids)
-        else:
-            # mode = top_k_threshold
-            return self.calc_neighbors_uncertainty(relevant_graph_ids)
+        # if self.mode == "top_k_cliques":
+        #     return self.calc_prediction_uncertainty(label_type)
+        # else:
+        #     # mode = top_k_threshold
+        #     return self.calc_neighbors_uncertainty(label_type)
+        return self.calc_neighbors_uncertainty(label_type)
 
-    def calc_neighbors_uncertainty(self, relevant_graph_ids):
+    def calc_neighbors_uncertainty(self, label_type):
         votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
-        for graph_id in relevant_graph_ids:
-            for pooler_id in self.connected_components[graph_id]:
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        old_ccs_copy = self.pos_old_connected_components if label_type == 1 else self.neg_old_connected_components.copy()
+        for graph_id in ccs_copy.keys():
+            for pooler_id in ccs_copy[graph_id]:
                 votes_values[pooler_id] = dict()
                 votes_values[pooler_id][0] = 0
                 votes_values[pooler_id][1] = 0
-                for neighbor in self.old_connected_components[graph_id][pooler_id]:
-                    weight = self.old_connected_components[graph_id][pooler_id][neighbor]['weight']
+                for neighbor in old_ccs_copy[graph_id][pooler_id]:
+                    weight = old_ccs_copy[graph_id][pooler_id][neighbor]['weight']
                     if neighbor < self.available_pool_size:
-                        votes_values[pooler_id][self.pool_predictions[neighbor]] += weight
+                        continue
+                        # votes_values[pooler_id][self.pool_predictions[neighbor]] += weight
                     else:
                         votes_values[pooler_id][self.training_labels[neighbor]] += weight
                 entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
             uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
         return uncertainty_dict
 
-    def calc_prediction_uncertainty(self, relevant_graph_ids):
+    def calc_prediction_uncertainty(self, label_type):
         votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
-        for graph_id in relevant_graph_ids:
-            for pooler_id in self.connected_components[graph_id]:
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        for graph_id in ccs_copy.keys():
+            for pooler_id in ccs_copy[graph_id]:
                 votes_values[pooler_id] = dict()
                 prediction = self.pool_predictions[pooler_id]
                 confidence = self.confidence_dict[pooler_id]
