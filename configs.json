@@ -483,7 +483,7 @@
   "testset": "data/wdc/shoes/title/test.txt"
 },
 {
-  "name": "WDC/wdc_shoes_title_medium",
+  "name": "WDC/wdc_shoes_title_medium0",
   "task_type": "classification",
   "vocab": ["0", "1"],
   "path": "data/wdc/shoes/title/",
@@ -523,7 +523,7 @@
   "testset": "data/wdc/computers/title/test.txt"
 },
 {
-  "name": "WDC/wdc_computers_title_medium",
+  "name": "WDC/wdc_computers_title_medium0",
   "task_type": "classification",
   "vocab": ["0", "1"],
   "path": "data/wdc/computers/title/",
