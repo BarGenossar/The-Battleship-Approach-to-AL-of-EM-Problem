@@ -644,30 +644,26 @@ class LSH_graph:
         neg_centrality = self.calc_centrality(0)
         pos_uncertainty = self.calc_uncertainty(1)
         neg_uncertainty = self.calc_uncertainty(0)
-        pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
-                                            self.positive_graph_ids,
-                                            self.positive_budget_dict, True)
-        neg_selected = self.find_candidates(neg_centrality, neg_uncertainty,
-                                            self.negative_graph_ids,
-                                            self.negative_budget_dict, False)
+        pos_selected = self.find_candidates(pos_centrality, pos_uncertainty, 1)
+        neg_selected = self.find_candidates(neg_centrality, neg_uncertainty, 0)
         selected_k = pos_selected + neg_selected
         self.save_to_pkl([pos_centrality, neg_centrality, pos_uncertainty, neg_uncertainty, selected_k],
                          ["pos_centrality", "neg_centrality", "pos_uncertainty", "neg_uncertainty", "selected_k"])
         return selected_k
 
-    def calc_criterion_pos(self):
-        pos_centrality = self.calc_centrality(self.connected_components.keys())
-        pos_uncertainty = self.calc_uncertainty(self.connected_components.keys())
-        pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
-                                            self.connected_components.keys(),
-                                            self.positive_budget_dict, True)
-        neg_ids = [pooler_id for pooler_id in self.pool_predictions.keys() if not self.pool_predictions[pooler_id]]
-        np.random.seed(seed=self.seed)
-        neg_selected = list(np.random.choice(neg_ids, round(self.k * (1 - self.pos_budget)), replace=False))
-        selected_k = pos_selected + neg_selected
-        self.save_to_pkl([pos_centrality, pos_uncertainty, selected_k],
-                         ["pos_centrality", "pos_uncertainty", "selected_k"])
-        return selected_k
+    # def calc_criterion_pos(self):
+    #     pos_centrality = self.calc_centrality(self.connected_components.keys())
+    #     pos_uncertainty = self.calc_uncertainty(self.connected_components.keys())
+    #     pos_selected = self.find_candidates(pos_centrality, pos_uncertainty,
+    #                                         self.connected_components.keys(),
+    #                                         self.positive_budget_dict, True)
+    #     neg_ids = [pooler_id for pooler_id in self.pool_predictions.keys() if not self.pool_predictions[pooler_id]]
+    #     np.random.seed(seed=self.seed)
+    #     neg_selected = list(np.random.choice(neg_ids, round(self.k * (1 - self.pos_budget)), replace=False))
+    #     selected_k = pos_selected + neg_selected
+    #     self.save_to_pkl([pos_centrality, pos_uncertainty, selected_k],
+    #                      ["pos_centrality", "pos_uncertainty", "selected_k"])
+    #     return selected_k
 
     def calc_centrality(self, label_type):
         """
@@ -779,23 +775,25 @@ class LSH_graph:
             result[pooler_id] = rank
         return result
 
-    def find_candidates(self, cands_centrality, cands_uncertainty, relevant_graph_ids,
-                        relevant_budget_dict, is_pos):
+    def find_candidates(self, cands_centrality, cands_uncertainty, label_type):
         final_cands = []
-        for graph_id in relevant_graph_ids:
+        ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
+        relevant_budget_dict = self.positive_budget_dict if label_type == 1 else self.negative_budget_dict
+        for graph_id in ccs_copy.keys():
             weighted_ranking = dict()
-            for pooler_id in self.connected_components[graph_id]:
+            for pooler_id in ccs_copy[graph_id]:
                 centrality_val = cands_centrality[graph_id][pooler_id]
                 uncertainty_val = cands_uncertainty[graph_id][pooler_id]
                 pooler_rank = self.selection_param * centrality_val + (1 - self.selection_param) * uncertainty_val
                 weighted_ranking[pooler_id] = pooler_rank
             sorted_items = sorted(weighted_ranking.items(), key=lambda item: item[1])
-            if is_pos:
-                sorted_items_pos = [item[0] for item in sorted_items if self.pool_predictions[item[0]]]
-                sorted_items_neg = [item[0] for item in sorted_items if not self.pool_predictions[item[0]]]
-                cc_cands = (sorted_items_pos + sorted_items_neg)[:relevant_budget_dict[graph_id]]
-            else:
-                cc_cands = [item[0] for item in sorted_items[:relevant_budget_dict[graph_id]]]
+            cc_cands = [item[0] for item in sorted_items[:relevant_budget_dict[graph_id]]]
+            # if label_type:
+            #     sorted_items_pos = [item[0] for item in sorted_items if self.pool_predictions[item[0]]]
+            #     sorted_items_neg = [item[0] for item in sorted_items if not self.pool_predictions[item[0]]]
+            #     cc_cands = (sorted_items_pos + sorted_items_neg)[:relevant_budget_dict[graph_id]]
+            # else:
+            #     cc_cands = [item[0] for item in sorted_items[:relevant_budget_dict[graph_id]]]
             final_cands.extend(cc_cands)
         return final_cands
 

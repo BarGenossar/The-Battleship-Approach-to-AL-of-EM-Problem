@@ -49,7 +49,7 @@ class TopKSelection:
         # self.pairs_ids, self.ids_pairs = self.get_pairs_ids()
 
     def handle_new_train_ids(self):
-        if self.mode == "top_k_Kasai":
+        if "Kasai" in self.mode:
             return self.get_new_train_ids_Kasai()
         else:
             return self.get_new_train_ids()
@@ -154,7 +154,8 @@ class TopKSelection:
         self.save_to_pkls([selected_samples, high_confidence_positive, high_confidence_negative],
                           ["selected_k_pool_to_original", "high_confidence_positive_k_pool_to_original",
                            "high_confidence_negative_k_pool_to_original"])
-        selected_samples = set.union(selected_samples, high_confidence_positive, high_confidence_negative)
+        if self.mode == "top_k_Kasai":
+            selected_samples = set.union(selected_samples, high_confidence_positive, high_confidence_negative)
         updated_train_ids = self.update_train_pkl(selected_samples)
         self.update_pool_pkl(selected_samples)
         return updated_train_ids, high_confidence_positive, high_confidence_negative

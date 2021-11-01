@@ -39,8 +39,13 @@ class Kasai:
         d_items = sorted(d_dict.items(), key=lambda item: item[1], reverse=True)
         likely_false, high_confidence = set(), set()
         for i in range(int(self.k / 2)):
-            likely_false.add(d_items[i][0])
-            high_confidence.add(d_items[-(i + 1)][0])
+            try:
+                likely_false.add(d_items[i][0])
+                high_confidence.add(d_items[-(i + 1)][0])
+            except:
+                print(f'The number of relevant predicted samples of this labels is too small')
+                print(f'K={i+1}')
+                break
         return likely_false, high_confidence
 
     @staticmethod

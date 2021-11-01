@@ -10,8 +10,8 @@ Seeds=$3;
 TaskName="Structured/Walmart-Amazon"
 SourceTask="Structured/Amazon-Google"
 
-# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D", "top_k_kasai"
-#
+# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D", "top_k_kasai", "top_k_kasai_without"
+# top_k_kasai_without is the same as top_k_kasai without the weak supervision
 
 # More options:
 
@@ -23,7 +23,7 @@ SourceTask="Structured/Amazon-Google"
 
 # For "all_D" and "*mode*/only_selected" set Iterations = 0
 
-Mode="top_k_cliques"
+Mode="top_k_kasai_without"
 InputPath="data/er_magellan/Structured/Walmart-Amazon/"
 OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
 LM="roberta"
