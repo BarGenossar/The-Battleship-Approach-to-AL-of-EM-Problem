@@ -222,14 +222,18 @@
   "name": "Structured/DBLP-ACM",
   "task_type": "classification",
   "vocab": ["0", "1"],
-  "trainset": "data/er_magellan/Structured/DBLP-ACM/train0.txt",
-  "validset": "data/er_magellan/Structured/DBLP-ACM/valid0.txt",
-  "testset": "data/er_magellan/Structured/DBLP-ACM/test0.txt"
+  "path": "data/er_magellan/Structured/DBLP-ACM/",
+  "current_train": "data/er_magellan/Structured/DBLP-ACM/current_train.txt",
+  "trainset": "data/er_magellan/Structured/DBLP-ACM/train.txt",
+  "validset": "data/er_magellan/Structured/DBLP-ACM/valid.txt",
+  "testset": "data/er_magellan/Structured/DBLP-ACM/test.txt"
   },
   {
   "name": "Structured/DBLP-ACM0",
   "task_type": "classification",
   "vocab": ["0", "1"],
+  "path": "data/er_magellan/Structured/DBLP-ACM/",
+  "current_train": "data/er_magellan/Structured/DBLP-ACM/current_train.txt",
   "trainset": "data/er_magellan/Structured/DBLP-ACM/train.txt",
   "validset": "data/er_magellan/Structured/DBLP-ACM/valid.txt",
   "testset": "data/er_magellan/Structured/DBLP-ACM/test.txt"
@@ -238,6 +242,8 @@
   "name": "Structured/DBLP-GoogleScholar",
   "task_type": "classification",
   "vocab": ["0", "1"],
+  "path": "data/er_magellan/Structured/DBLP-GoogleScholar/",
+  "current_train": "data/er_magellan/Structured/DBLP-GoogleScholar/current_train.txt",
   "trainset": "data/er_magellan/Structured/DBLP-GoogleScholar/train.txt",
   "validset": "data/er_magellan/Structured/DBLP-GoogleScholar/valid.txt",
   "testset": "data/er_magellan/Structured/DBLP-GoogleScholar/test.txt"
@@ -246,9 +252,11 @@
   "name": "Structured/DBLP-GoogleScholar0",
   "task_type": "classification",
   "vocab": ["0", "1"],
-  "trainset": "data/er_magellan/Structured/DBLP-GoogleScholar/train0.txt",
-  "validset": "data/er_magellan/Structured/DBLP-GoogleScholar/valid0.txt",
-  "testset": "data/er_magellan/Structured/DBLP-GoogleScholar/test0.txt"
+  "path": "data/er_magellan/Structured/DBLP-GoogleScholar/",
+  "current_train": "data/er_magellan/Structured/DBLP-GoogleScholar/current_train.txt",
+  "trainset": "data/er_magellan/Structured/DBLP-GoogleScholar/train.txt",
+  "validset": "data/er_magellan/Structured/DBLP-GoogleScholar/valid.txt",
+  "testset": "data/er_magellan/Structured/DBLP-GoogleScholar/test.txt"
   },
   {
   "name": "Structured/Fodors-Zagats",

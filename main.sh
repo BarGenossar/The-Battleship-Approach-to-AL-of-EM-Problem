@@ -7,10 +7,16 @@ Iterations=$2;
 
 Seeds=$3;
 
-TaskName="Structured/Walmart-Amazon"
-SourceTask="Structured/Amazon-Google"
 
-# Possible modes: "random", "top_k_threshold", "top_k_cliques", "all_D", "top_k_kasai", "top_k_kasai_without"
+#TaskName="WDC/wdc_cameras_title_medium"
+#SourceTask="WDC/wdc_shoes_title_medium"
+#TaskName="Structured/Amazon-Google"
+#SourceTask="Structured/Walmart-Amazon"
+TaskName="Structured/Walmart-Amazon"
+SourceTask="Structured/Walmart-Amazon"
+
+
+# Possible modes: "random", "top_k_threshold", "battleships", "all_D", "top_k_kasai", "top_k_kasai_without"
 # top_k_kasai_without is the same as top_k_kasai without the weak supervision
 
 # More options:
@@ -23,21 +29,20 @@ SourceTask="Structured/Amazon-Google"
 
 # For "all_D" and "*mode*/only_selected" set Iterations = 0
 
-Mode="top_k_kasai_without"
+# Mode="top_k_cliques"
+# Modes=("battleships_ws_k" "battleships_ws_b" "battleships" "top_k_Kasai" "random" "all_D")
+Mode="all_D"
 InputPath="data/er_magellan/Structured/Walmart-Amazon/"
-OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
+OutputPath="output/er_magellan/Structured/Walmart-Amazon/Walmart-Amazon/"
+#InputPath="data/wdc/cameras/title/"
+#OutputPath="output/wdc/cameras/title/shoes/"
+#InputPath="data/wdc/cameras/title/"
+#OutputPath="output/wdc/cameras/title/shoes/"
+
+
 LM="roberta"
 training_type="active_learning"
 criterion_type="pagerank"
-
-#TaskName="Structured/Amazon-Google"
-#SourceTask="Structured/Walmart-Amazon"
-#Mode="top_k"
-#InputPath="data/wdc/shoes/title/"
-#OutputPath="output/wdc/shoes/title/computers/"
-#LM="roberta"
-#training_type="active_learning"
-#criterion_type="pagerank"
 
 declare -i Intent=0
 declare -i MaxLen=512
@@ -45,14 +50,16 @@ declare -i Batch=12
 declare -i N_Epochs=15
 
 
-
-for (( seed=1; seed<=Seeds; seed++ ))
+#for Mode in ${Modes[*]}:
+#do
+  for (( seed=1; seed<=Seeds; seed++ ))
   do
     for (( iter=0; iter<=Iterations; iter++ ))
     do
-#        python email_sender.py \
-#                --message="Demo Iteration Started. seed = ${seed} / ${Seeds}, iteration = ${iter} / ${Iterations}"
+
         echo Iteration: $iter
+        echo Mode: $Mode
+        echo Seed: $seed
 
         python training_samples_selection.py \
                 --task=${TaskName} \
@@ -88,6 +95,7 @@ for (( seed=1; seed<=Seeds; seed++ ))
                 --mode=$Mode
     done
   done
+#done
 
 #python email_sender.py \
 #        --message="Run ${TaskName} Finished"

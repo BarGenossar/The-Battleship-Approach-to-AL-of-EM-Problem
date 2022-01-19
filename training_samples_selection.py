@@ -14,8 +14,9 @@ import re
 
 class TopKSelection:
     def __init__(self, task, SourceTask, k, iteration, mode, files_path,
-                 orig_train_path, seed, iterations, output_path,
-                 criterion='pagerank', intent_num=0, replace_param=1):
+                 orig_train_path, seed, iterations, output_path, from_iter,
+                 criterion='pagerank', intent_num=0, replace_param=1,
+                 weak_supervision=True, without_DA=False):
         torch.manual_seed(seed)
         random.seed(seed)
         self.task = task  # The name of the target task
@@ -33,8 +34,11 @@ class TopKSelection:
         self.criterion = criterion  # Criterion for centrality calculation
         # How many samples from D' are removed in a single iteration (where D_rep in mode)
         self.replaced_samples_size = replace_param * k
-
+        self.weak_supervision = weak_supervision
+        self.from_iter = from_iter
+        self.without_da = without_DA
         self.original_input = self.get_original_input(self.orig_train)  # Raw training input pairs
+        self.handle_from_iter()
         self.available_pool_ids = self.get_available_pool_ids()
         # Row indices of available pool (as appeared in the original data)
         self.available_pool, self.pool_to_original = self.get_available_pool()
@@ -46,6 +50,7 @@ class TopKSelection:
         self.current_train = self.get_new_train()  # List of records to train on, from source and target.
         self.write_pairs2file('pool')
         self.write_pairs2file('train')
+        self.create_weak_file()
         # self.pairs_ids, self.ids_pairs = self.get_pairs_ids()
 
     def handle_new_train_ids(self):
@@ -93,12 +98,56 @@ class TopKSelection:
         self.save_to_pkl(pool_to_original, "pool_to_original_dict")
         return available_pool, pool_to_original
 
-    def update_train_pkl(self, selected_k):
+    def handle_from_iter(self):
+        if self.from_iter == 0 or self.from_iter != self.iter:
+            return
+        # Update available_pool_ids.pkl according to previous documentation
+        available_pool = set([idx for idx in range(len(self.original_input))])
+        if "Kasai" in self.mode:
+            files_list = ["selected_k_pool_to_original_iter", "high_confidence_negative_k_pool_to_original_iter",
+                          "high_confidence_positive_k_pool_to_original_iter"]
+        else:
+            files_list = ["selected_k_pool_to_original_iter", "ws_neg_cands_pool_to_original_iter",
+                          "ws_pos_cands_pool_to_original_iter"]
+        pkl_output_path = self.output_path + self.mode + '/pkl_files/'
+        selected_ids = set()
+        weak_ids = set()
+        for curr_iter in range(1, self.iter):
+            for file in files_list:
+                pkl_file = open(pkl_output_path + file + str(curr_iter) + '_seed' + str(self.seed) + '.pkl', 'rb')
+                file_ids = pickle.load(pkl_file)
+                pkl_file.close()
+                selected_ids.update(file_ids)
+                if 'ws' in file:
+                    weak_ids.update(file_ids)
+        available_pool = available_pool.difference(selected_ids)
+        output = open(self.files_path + 'available_pool_ids.pkl', 'wb')
+        output2 = open(self.files_path + 'weak_ids.pkl', 'wb')
+        pickle.dump(available_pool, output)
+        pickle.dump(weak_ids, output2)
+        output.close()
+        output2.close()
+        self.update_current_train_from_iter()
+        return
+
+    def update_current_train_from_iter(self):
+        current_path = self.files_path + self.source_task.split('/')[1][:-1] + '/' + self.mode + '/'
+        correct_file = open(current_path + "current_train_iter" + str(self.iter - 1) + "_seed" + str(self.seed) + '.txt',
+                            "r", encoding="utf-8")
+        file_lines = correct_file.readlines()
+        correct_file.close()
+        new_current_train = open(self.files_path + 'current_train.txt', "w", encoding="utf-8")
+        for pair in file_lines:
+            new_current_train.write(pair)
+        new_current_train.close()
+        return
+
+    def update_train_pkl(self, new_samples):
         """
         Update the current train pickle file (or create one) with the recently new chosen records.
         Return a set contains the whole new current train (include the previous train).
         """
-        new_train = selected_k
+        new_train = new_samples
         if self.iter > 1:
             pkl_file = open(self.files_path + 'current_train.pkl', 'rb')
             previous_train = pickle.load(pkl_file)
@@ -124,12 +173,35 @@ class TopKSelection:
         self.available_pool_ids = available_pool_ids
         self.available_pool, self.pool_to_original = self.get_available_pool()
 
+    def update_weak_pkl(self, ws_pos_cands, ws_neg_cands):
+        new_weaks = ws_pos_cands.union(ws_neg_cands)
+        if self.iter >= 1:
+            pkl_file = open(self.files_path + 'weak_ids.pkl', 'rb')
+            previous_weaks = pickle.load(pkl_file)
+            pkl_file.close()
+            new_weaks.update(previous_weaks)
+        output = open(self.files_path + 'weak_ids.pkl', 'wb')
+        pickle.dump(new_weaks, output)
+        output.close()
+        return new_weaks
+
+    def create_weak_file(self):
+        if self.iter == 0:
+            dummy = set()
+            output = open(self.files_path + 'weak_ids.pkl', 'wb')
+            output2 = open(self.files_path + 'weak_ids_current_train.pkl', 'wb')
+            pickle.dump(dummy, output)
+            pickle.dump(dummy, output2)
+            output.close()
+        return
+
     def get_new_train_ids(self):
         """
         Use the given mode to pool K records out of the records available for pool, to use for training in the next
         iteration. for first iteration, return None (the model havn't yet trained over D') for random - select K
         random records. for top_k - use the battleship approach
         """
+        ws_pos_cands, ws_neg_cands = {}, {}
         if "only_selected" in self.mode:
             return self.find_all_selected(), None, None
         elif self.mode == "all_D" or self.iter == 0:
@@ -137,27 +209,39 @@ class TopKSelection:
         elif self.mode == "random":
             selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
         else:
-            selected_samples = self.find_top_k()
+            selected_samples, ws_pos_cands, ws_neg_cands = self.find_top_k()
         selected_samples = {self.pool_to_original[idx] for idx in selected_samples}
-        updated_train_ids = self.update_train_pkl(selected_samples)
-        self.update_pool_pkl(selected_samples)
+        if self.weak_supervision:
+            ws_pos_cands = {self.pool_to_original[idx] for idx in ws_pos_cands}
+            ws_neg_cands = {self.pool_to_original[idx] for idx in ws_neg_cands}
+        new_samples = set.union(selected_samples, ws_pos_cands, ws_neg_cands)
+        updated_train_ids = self.update_train_pkl(new_samples)
+        self.update_pool_pkl(new_samples)
+        self.update_weak_pkl(ws_pos_cands, ws_neg_cands)
         self.save_to_pkl(selected_samples, "selected_k_pool_to_original")
+        self.save_to_pkl(ws_pos_cands, "ws_pos_cands_pool_to_original")
+        self.save_to_pkl(ws_neg_cands, "ws_neg_cands_pool_to_original")
         return updated_train_ids, None, None
 
     def get_new_train_ids_Kasai(self):
         if self.iter == 0:
-            return None, None, None
-        selected_samples, high_confidence_positive, high_confidence_negative = self.top_k_kasai()
-        high_confidence_positive = {self.pool_to_original[idx] for idx in high_confidence_positive}
-        high_confidence_negative = {self.pool_to_original[idx] for idx in high_confidence_negative}
+            if self.without_da:
+                selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
+                high_confidence_positive, high_confidence_negative = set(), set()
+            else:
+                return None, None, None
+        else:
+            selected_samples, high_confidence_positive, high_confidence_negative = self.top_k_kasai()
+            high_confidence_positive = {self.pool_to_original[idx] for idx in high_confidence_positive}
+            high_confidence_negative = {self.pool_to_original[idx] for idx in high_confidence_negative}
         selected_samples = {self.pool_to_original[idx] for idx in selected_samples}
         self.save_to_pkls([selected_samples, high_confidence_positive, high_confidence_negative],
                           ["selected_k_pool_to_original", "high_confidence_positive_k_pool_to_original",
                            "high_confidence_negative_k_pool_to_original"])
         if self.mode == "top_k_Kasai":
-            selected_samples = set.union(selected_samples, high_confidence_positive, high_confidence_negative)
-        updated_train_ids = self.update_train_pkl(selected_samples)
-        self.update_pool_pkl(selected_samples)
+            new_samples = set.union(selected_samples, high_confidence_positive, high_confidence_negative)
+        updated_train_ids = self.update_train_pkl(new_samples)
+        self.update_pool_pkl(new_samples)
         return updated_train_ids, high_confidence_positive, high_confidence_negative
 
     def find_all_selected(self):
@@ -181,6 +265,8 @@ class TopKSelection:
         """
         current_train = []
         source_lines = self.get_source_lines()
+        if self.without_da:
+            return []
         if "D_rep" not in self.mode or self.iter == 0:
             for pair in source_lines:
                 current_train.append(pair)
@@ -262,13 +348,59 @@ class TopKSelection:
         elif "only_selected" in self.mode:
             return self.read_only_selected()
         current_train = self.read_source_dataset()
-        if self.iter >= 1:
-            for idx, pair in enumerate(self.original_input):
-                if idx in self.current_train_ids:
-                    current_train.append(self.modify_pair(idx, pair))
-            random.seed(self.seed)
-            random.shuffle(current_train)
+        if self.iter >= 1 or self.without_da:
+            if self.weak_supervision:
+                current_train = self.get_current_train_ws(current_train)
+            else:
+                current_train = self.get_current_train_without_ws(current_train)
         return current_train
+
+    def get_current_train_ws(self, current_train):
+        weak_ids_orig = self.find_weaks_ids()
+        weak_ids_tmp = set()
+        counter = 0
+        for idx, pair in enumerate(self.original_input):
+            if idx in self.current_train_ids:
+                current_train.append(self.modify_pair(idx, pair))
+                if idx in weak_ids_orig:
+                    weak_ids_tmp.add(counter)
+                counter += 1
+        orig_mapping = self.create_orig_mapping(current_train)
+        random.seed(self.seed)
+        random.shuffle(current_train)
+        self.convert_weak_ids(current_train, orig_mapping, weak_ids_tmp)
+        return current_train
+
+    def get_current_train_without_ws(self, current_train):
+        for idx, pair in enumerate(self.original_input):
+            if idx in self.current_train_ids:
+                current_train.append(self.modify_pair(idx, pair))
+        random.seed(self.seed)
+        random.shuffle(current_train)
+        return current_train
+
+    def convert_weak_ids(self, current_train, orig_mapping, weak_ids_tmp):
+        weak_idx_current_train = set()
+        for new_idx, pair in enumerate(current_train):
+            if orig_mapping[pair] in weak_ids_tmp:
+                weak_idx_current_train.add(new_idx)
+        output = open(self.files_path + 'weak_ids_current_train.pkl', 'wb')
+        pickle.dump(weak_idx_current_train, output)
+        output.close()
+        return
+
+    @staticmethod
+    def create_orig_mapping(current_train):
+        orig_mapping = dict()
+        for idx, pair in enumerate(current_train):
+            orig_mapping[pair] = idx
+        return orig_mapping
+
+    def find_weaks_ids(self):
+        pkl_file = open(self.files_path + 'weak_ids.pkl', 'rb')
+        weak_ids = pickle.load(pkl_file)
+        pkl_file.close()
+        return weak_ids
 
     def modify_pair(self, idx, pair):
         if self.mode == "top_k_Kasai":
@@ -306,6 +438,7 @@ class TopKSelection:
         Find the top K samples using the LSH_graph.
         Return the indices of the selected samples from available_pool_ids
         """
+        ws_pos_cands, ws_neg_cands = None, None
         poolers_path = self.define_poolers_path()
         # Path to available pool (including last iteration predictions)
         poolers_path_available_pool = poolers_path.replace("data", "output")
@@ -314,7 +447,10 @@ class TopKSelection:
         LSH_graph_obj = LSH_graph([poolers_path_available_pool, poolers_path_current_train],
                                   self.k, self.seed, self.files_path, self.output_path, self.iter,
                                   self.criterion, self.mode)
-        return LSH_graph_obj.get_selected_k
+        selected_k = LSH_graph_obj.get_selected_k
+        if self.weak_supervision:
+            ws_pos_cands, ws_neg_cands = LSH_graph_obj.get_weakly_supervised
+        return selected_k, ws_pos_cands, ws_neg_cands
 
     def define_poolers_path(self):
         """
@@ -407,16 +543,17 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
-    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
+    parser.add_argument("--task", type=str, default="WDC/wdc_cameras_title_medium")
+    parser.add_argument("--source_task", type=str, default="WDC/wdc_shoes_title_medium")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
     parser.add_argument("--iter_num", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="top_k_cliques")
+    parser.add_argument("--mode", type=str, default="battleships_ws_b_alpha=0.5")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/")
+    parser.add_argument("--output_path", type=str, default="output/wdc/cameras/title/shoes/")
+    parser.add_argument("--from_iter", type=int, default=0)
     start = time.time()
     hp = parser.parse_args()
 
@@ -427,6 +564,7 @@ if __name__ == "__main__":
     iter_num = hp.iter_num
     selection_mode = hp.mode
     seed = hp.seed
+    from_iter = hp.from_iter
 
     # if "only_selected" in mode then iterations = 0 in the call for main.sh but in this file it must be
     # the original number of iterations
@@ -440,7 +578,8 @@ if __name__ == "__main__":
     orig_train = configs[task + str(intent)]['trainset']
     source_task += str(intent)
     top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode,
-                                  path, orig_train, seed, iterations, output_path, criterion)
+                                  path, orig_train, seed, iterations, output_path,
+                                  from_iter, criterion)
     end = time.time()
 
     print(f'The process took :{round(end - start, 2)} seconds')
