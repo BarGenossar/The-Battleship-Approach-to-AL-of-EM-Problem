@@ -98,7 +98,7 @@ class LSH_graph:
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
             pooler = line.split('pooler')[1][3:-2].replace('[', '').replace(',', '').replace(']', '')
-            poolers_dict[id_val] = list(map(float, pooler.split(' ')))
+            poolers_dict[id_val] = np.array(list(map(float, pooler.split(' '))))
         preds_file.close()
         return poolers_dict
 
@@ -119,7 +119,7 @@ class LSH_graph:
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
             pooler = line.split('pooler')[1][3:-2].replace('[', '').replace(',', '').replace(']', '')
-            poolers_dict[id_val + available_pool_size] = list(map(float, pooler.split(' ')))
+            poolers_dict[id_val + available_pool_size] = np.array(list(map(float, pooler.split(' '))))
         preds_file.close()
         return poolers_dict
 
@@ -457,7 +457,7 @@ class LSH_graph:
         ccs_centroids = dict.fromkeys(ccs_copy.keys())
         for graph_id, graph in ccs_copy.items():
             poolers_list = [self.poolers[pooler_id] for pooler_id in graph.nodes()]
-            ccs_centroids[graph_id] = list(np.mean(poolers_list, axis=0))
+            ccs_centroids[graph_id] = np.array(list(np.mean(poolers_list, axis=0)))
         return ccs_centroids
 
     def update_rel_CCs(self, rel_CCs, label_type):
@@ -472,10 +472,10 @@ class LSH_graph:
 
     @staticmethod
     def find_closest_cc(graph_id, ccs_centroids, legit_connected_components):
-        current_centroid = np.array(ccs_centroids[graph_id])
+        current_centroid = ccs_centroids[graph_id]
         # Create a list of pairs (cc_id, dist) where dist is the distance
         # from the current_centroid to the centroid of cc_id
-        distances = [(cc_id, round(spatial.distance.cosine(current_centroid, np.array(ccs_centroids[cc_id])), 3))
+        distances = [(cc_id, round(spatial.distance.cosine(current_centroid, ccs_centroids[cc_id]), 3))
                      for cc_id in legit_connected_components]
         return min(distances, key=lambda x: x[1])[0]
 
@@ -646,7 +646,7 @@ class LSH_graph:
         """
         pooler1 = self.poolers[pair[0]]
         pooler2 = self.poolers[pair[1]]
-        return max(round(1 - spatial.distance.cosine(np.array(pooler1), np.array(pooler2)), 3), 0)
+        return max(round(1 - spatial.distance.cosine(pooler1, pooler2), 3), 0)
 
     # def graph_relative_adjs(self):
     #     pairs_dict = self.create_pairs_dict()
@@ -961,12 +961,12 @@ class LSH_graph:
 
     def calc_ws_distances(self, ws_candidates):
         distances = {pooler_id: dict() for pooler_id in ws_candidates}
-        labeled_poolers = {labeled_id: np.array(self.poolers[labeled_id]) for labeled_id in
+        labeled_poolers = {labeled_id: self.poolers[labeled_id] for labeled_id in
                            range(self.available_pool_size, len(self.poolers))}
         for pooler_id in distances.keys():
-            pooler_vec = np.array(self.poolers[pooler_id])
             for labeled_id in range(self.available_pool_size, len(self.poolers)):
-                distances[pooler_id][labeled_id] = spatial.distance.cosine(pooler_vec, labeled_poolers[labeled_id])
+                distances[pooler_id][labeled_id] = spatial.distance.cosine(self.poolers[pooler_id],
+                                                                           labeled_poolers[labeled_id])
         del labeled_poolers
         return distances
 
