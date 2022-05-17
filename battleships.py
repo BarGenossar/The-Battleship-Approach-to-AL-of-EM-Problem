@@ -15,14 +15,15 @@ from scipy import spatial
 import multiprocessing
 from collections import defaultdict
 import time
+import faiss
 
 
-class LSH_graph:
+class battleships_graph:
     def __init__(self, poolers_paths, k, seed, files_path, output_path, iteration, criterion='pagerank',
                  mode='top_k', weights_type='with_threshold',
                  lsh_iterations=10, dim=768, pos_threshold_cond=0.5,
                  pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.4,
-                 adapted_sim_threshold=0.9, min_cc_ratio=0.05, max_cc_ratio=0.15,
+                 adapted_sim_threshold=0.9, min_cc_ratio=0.03, max_cc_ratio=0.15,
                  nearest_param=25, treat_weak_labels=True):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -186,7 +187,7 @@ class LSH_graph:
     #                       "ccs_available_pool_sizes", "orig_buckets2poolers", "bucket_parents"])
     #     return graph, connected_components, ccs_available_pool_sizes
 
-    def from_lsh2graph_type(self, label_type):
+    def find_rel_ids_min_max(self, label_type):
         if label_type == 2:
             rel_ids = {pooler_id for pooler_id in self.poolers.keys()}
             min_val = int(0.25 * self.min_cc_ratio * len(self.poolers))
@@ -197,14 +198,15 @@ class LSH_graph:
                 else int(self.min_cc_ratio * len(self.neg_preds_ids))
             max_val = int(self.max_cc_ratio * len(self.pos_preds_ids)) if label_type == 1 \
                 else int(self.max_cc_ratio * len(self.neg_preds_ids))
-            # rel_ids.update(self.pos_labels_ids if label_type == 1 else self.neg_labels_ids)
+        return rel_ids, min_val, max_val
+
+    def from_lsh2graph_type(self, label_type):
+        rel_ids, min_val, max_val = self.find_rel_ids_min_max(label_type)
         suffix = str(label_type)
         buckets2poolers = self.create_buckets(rel_ids, min_val)
         final_buckets2poolers, bucket_parents = self.iteative_bucketing(buckets2poolers, min_val, max_val)
         graph = self.initialize_graph(rel_ids)
-        # graph = self.create_graph_edges(graph, lsh_iterations, final_buckets2poolers,
-        #                                 edges_threshold, sim_threshold)
-        graph = self.graph_with_threshold(graph, final_buckets2poolers, self.sim_threshold)
+        graph = self.connect_nodes(graph, final_buckets2poolers)
         connected_components = self.create_connected_components(graph)
         light_conncted_components = self.get_light_connected_components(connected_components)
         ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes(connected_components)
@@ -259,12 +261,12 @@ class LSH_graph:
             buckets2poolers_dict[bucket_id].append(pooler_id)
         return buckets2poolers_dict
 
-    @staticmethod
-    def clean_buckets2poolers(buckets2poolers, final_buckets2poolers):
-        for bucket_id in buckets2poolers.keys():
-            if bucket_id in final_buckets2poolers.keys():
-                buckets2poolers.pop(bucket_id)
-        return buckets2poolers
+    # @staticmethod
+    # def clean_buckets2poolers(buckets2poolers, final_buckets2poolers):
+    #     for bucket_id in buckets2poolers.keys():
+    #         if bucket_id in final_buckets2poolers.keys():
+    #             buckets2poolers.pop(bucket_id)
+    #     return buckets2poolers
 
     def iteative_bucketing(self, buckets2poolers, min_val, max_val):
         lsh_iter = 0
@@ -293,9 +295,20 @@ class LSH_graph:
                                                                            str(lsh_iter))
         return final_buckets2poolers, bucket_parents
 
-    @staticmethod
-    def merge_buckets2poolers(final_buckets2poolers, buckets2poolers, bucket_parents, lsh_iter):
+    @ staticmethod
+    def clean_buckets2poolers(buckets2poolers):
+        if len(buckets2poolers) > 0:
+            merged_bucket = []
+            buckets2poolers_copy = buckets2poolers.copy()
+            for bucket_id, bucket in buckets2poolers_copy.items():
+                merged_bucket.extend(bucket)
+                buckets2poolers.pop(bucket_id)
+            buckets2poolers['final_lsh_iter'] = merged_bucket
+        return buckets2poolers
+
+    def merge_buckets2poolers(self, final_buckets2poolers, buckets2poolers, bucket_parents, lsh_iter):
         new_bucket_id = len(final_buckets2poolers)
+        buckets2poolers = self.clean_buckets2poolers(buckets2poolers)
         for bucket_id, bucket in buckets2poolers.items():
             final_buckets2poolers['lshIter' + lsh_iter + '_' + str(new_bucket_id)] = bucket
             bucket_parents['lshIter' + lsh_iter + '_' + str(new_bucket_id)] = bucket_id
@@ -351,9 +364,9 @@ class LSH_graph:
 
     def validate_connected_components(self):
         # self.fix_large_connected_components()
-        self.fix_small_connected_components(0)
-        self.fix_small_connected_components(1)
-        self.fix_small_connected_components_het()
+        # self.fix_small_connected_components(0)
+        # self.fix_small_connected_components(1)
+        # self.fix_small_connected_components_het()
         light_conncted_components_pos = self.get_light_connected_components(self.pos_connected_components)
         light_conncted_components_neg = self.get_light_connected_components(self.neg_connected_components)
         self.save_to_pkl([light_conncted_components_pos, light_conncted_components_neg,
@@ -430,7 +443,7 @@ class LSH_graph:
                                       if ccs_available_pool_copy[graph_id] < min_val}
         legit_connected_components = {graph_id for graph_id in ccs_copy.keys()
                                       if graph_id not in small_connected_components.keys()}
-        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 4) - 1) as pool:
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
             closest_graphs = pool.starmap(self.find_closest_cc, zip(small_connected_components.keys(),
                                                                     repeat(ccs_centroids),
                                                                     repeat(legit_connected_components)))
@@ -439,11 +452,6 @@ class LSH_graph:
             closest_graph_id = closest_graphs_dict[graph_id]
             ccs_copy = self.connect_small_to_legit(graph, closest_graph_id, ccs_copy)
             ccs_copy.pop(graph_id)
-        # for graph_id, graph in small_connected_components.items():
-        #     closest_graph_id = self.find_closest_cc(graph_id, ccs_centroids,
-        #                                             legit_connected_components)
-        #     ccs_copy = self.connect_small_to_legit(graph, closest_graph_id, ccs_copy)
-        #     ccs_copy.pop(graph_id)
         self.update_rel_CCs(ccs_copy, label_type)
         return
 
@@ -455,7 +463,7 @@ class LSH_graph:
                                       if len(graph) < min_val}
         legit_connected_components = {graph_id for graph_id in ccs_copy.keys()
                                       if graph_id not in small_connected_components.keys()}
-        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 4) - 1) as pool:
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
             closest_graphs = pool.starmap(self.find_closest_cc, zip(small_connected_components.keys(),
                                                                     repeat(ccs_centroids),
                                                                     repeat(legit_connected_components)))
@@ -487,8 +495,6 @@ class LSH_graph:
     @staticmethod
     def find_closest_cc(graph_id, ccs_centroids, legit_connected_components):
         current_centroid = ccs_centroids[graph_id]
-        # Create a list of pairs (cc_id, dist) where dist is the distance
-        # from the current_centroid to the centroid of cc_id
         distances = [(cc_id, round(spatial.distance.cosine(current_centroid, ccs_centroids[cc_id]), 3))
                      for cc_id in legit_connected_components]
         return graph_id, min(distances, key=lambda x: x[1])[0]
@@ -500,7 +506,7 @@ class LSH_graph:
         np.random.seed(seed=self.seed)
         selected_nodes = np.random.choice(closest_graph.nodes(), graph.number_of_nodes())
         pairs = set(zip(graph.nodes(), selected_nodes))
-        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 4) - 1) as pool:
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
             pairs_weight = list(pool.map(self.calc_pair_weight, pairs))
         new_pairs_weight = [(pair[0], pair[1], weight) for pair, weight in pairs_weight]
         closest_graph.add_weighted_edges_from(new_pairs_weight)
@@ -643,6 +649,95 @@ class LSH_graph:
     #             graph.add_edges_from(list(combinations(current_bucket, 2)))
     #     return graph
 
+    def add_automatic_edges(self, pooler_id, edges_set, automatic_edges_num, neighbors, bucket2orig):
+        added = 0
+        for neighbor in neighbors[0][1:]:
+            if added >= automatic_edges_num:
+                break
+            if (neighbor, pooler_id) not in edges_set \
+                    and min(bucket2orig[neighbor], bucket2orig[pooler_id]) < self.available_pool_size:
+                edges_set.add((bucket2orig[pooler_id], bucket2orig[neighbor]))
+                added += 1
+        return edges_set
+
+    def update_candidate_neighbors_dict(self, pooler_id, edges_set, automatic_edges_num,
+                                        neighbors, dists, candidate_neighbors_dict, bucket2orig):
+        for neighbor, dist in zip(neighbors[0][automatic_edges_num + 1:], dists[0][automatic_edges_num + 1:]):
+            if (pooler_id, neighbor) not in edges_set and (neighbor, pooler_id) not in edges_set:
+                if (neighbor, pooler_id) not in candidate_neighbors_dict.keys() \
+                        and min(bucket2orig[neighbor], bucket2orig[pooler_id]) < self.available_pool_size:
+                    candidate_neighbors_dict[(bucket2orig[pooler_id], bucket2orig[neighbor])] = dist
+        return candidate_neighbors_dict
+
+    def update_edges_and_candidates(self, pooler_vec, index, candidate_neighbors_size, pooler_id,
+                                    edges_set, automatic_edges_num, candidate_neighbors_dict, bucket2orig):
+        query_pooler = np.expand_dims(pooler_vec, axis=0)
+        dists, neighbors = index.search(query_pooler, candidate_neighbors_size)
+        edges_set = self.add_automatic_edges(pooler_id, edges_set, automatic_edges_num, neighbors, bucket2orig)
+        candidate_neighbors_dict = self.update_candidate_neighbors_dict(pooler_id, edges_set,
+                                                                        automatic_edges_num, neighbors,
+                                                                        dists, candidate_neighbors_dict,
+                                                                        bucket2orig)
+        return edges_set, candidate_neighbors_dict
+
+    def process_candidates(self, candidate_neighbors_dict, edges_ratio, edges_set):
+        edges_limit = int(edges_ratio * len(candidate_neighbors_dict))
+        for counter, pair in enumerate(candidate_neighbors_dict.keys()):
+            if counter > edges_limit:
+                break
+            edges_set.add((pair[0], pair[1]))
+        return edges_set
+
+    def create_bucket_edges(self, bucket_ids, automatic_edges_num=5, edges_ratio=0.05):
+        rel_poolers = np.array([self.poolers[pooler_id] for pooler_id in bucket_ids], dtype="float32")
+        bucket2orig = {idx: pooler_id for idx, pooler_id in enumerate(bucket_ids)}
+        d = len(self.poolers[0])
+        index = faiss.IndexFlatL2(d)
+        index.add(rel_poolers)
+        candidate_neighbors_size = min(self.k, len(bucket_ids))
+        edges_set = set()
+        candidate_neighbors_dict = dict()
+        for pooler_id, pooler_vec in enumerate(rel_poolers):
+            edges_set, candidate_neighbors_dict = self.update_edges_and_candidates(pooler_vec, index,
+                                                                                   candidate_neighbors_size,
+                                                                                   pooler_id, edges_set,
+                                                                                   automatic_edges_num,
+                                                                                   candidate_neighbors_dict,
+                                                                                   bucket2orig)
+        candidate_neighbors_dict = {k: v for k, v in sorted(candidate_neighbors_dict.items(), key=lambda item: item[1])}
+        edges_set = self.process_candidates(candidate_neighbors_dict, edges_ratio, edges_set)
+        return edges_set
+
+    @staticmethod
+    def create_final_edge_set(edges_set_per_bucket):
+        final_edge_set = set()
+        for bucket_edges in edges_set_per_bucket:
+            final_edge_set.update(bucket_edges)
+        return final_edge_set
+
+    def connect_nodes(self, graph, buckets2poolers):
+        """
+        Add edges between nodes only when at least one of them belongs to the available pool,
+        and within the same bucket.
+        """
+        # pairs_set = self.create_pairs_set(buckets2poolers)
+        # pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in pairs_set if
+        #               min(pair[0], pair[1]) < self.available_pool_size]
+        edges_set_per_bucket = set()
+        # for bucket in buckets2poolers.values():
+        #     edges_set.update(list(self.create_bucket_edges(bucket)))
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
+            edges_set_per_bucket = list(pool.map(self.create_bucket_edges, buckets2poolers.values()))
+        final_edge_set = self.create_final_edge_set(edges_set_per_bucket)
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
+            final_pairs_weight = list(pool.map(self.calc_pair_weight, final_edge_set))
+        # final_pairs_weight = [(pair[0], pair[1], weight) for pair, weight in pairs_weight if
+        #                       min(pair[0], pair[1]) < self.available_pool_size]
+        # pairs_list_final = final_pairs_weight.copy()
+        graph.add_weighted_edges_from(final_pairs_weight)
+        return graph
+
+
     def graph_with_threshold(self, graph, buckets2poolers, sim_threshold):
         """
         Add edges between nodes only when at least one of them belongs to the available pool,
@@ -651,7 +746,7 @@ class LSH_graph:
         pairs_set = self.create_pairs_set(buckets2poolers)
         # pairs_list = [(pair[0], pair[1], self.calc_pair_weight(pair)) for pair in pairs_set if
         #               min(pair[0], pair[1]) < self.available_pool_size]
-        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 4) - 1) as pool:
+        with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
             pairs_weight = list(pool.map(self.calc_pair_weight, pairs_set))
         final_pairs_weight = [(pair[0], pair[1], weight) for pair, weight in pairs_weight if
                               min(pair[0], pair[1]) < self.available_pool_size]
@@ -665,14 +760,8 @@ class LSH_graph:
         """
         pooler1 = self.poolers[pair[0]]
         pooler2 = self.poolers[pair[1]]
-        return pair, max(round(1 - spatial.distance.cosine(pooler1, pooler2), 3), 0)
-
-    # def graph_relative_adjs(self):
-    #     pairs_dict = self.create_pairs_dict()
-    #     pairs_list = [(key[0], key[1], val/self.lsh_iterations)
-    #                   for key, val in pairs_dict.items()]
-    #     self.graph.add_weighted_edges_from(pairs_list)
-    #     return self.graph
+        weight = max(round(1 - spatial.distance.cosine(pooler1, pooler2), 3), 0)
+        return pair[0], pair[1], weight
 
     @staticmethod
     def create_pairs_set(buckets2poolers):

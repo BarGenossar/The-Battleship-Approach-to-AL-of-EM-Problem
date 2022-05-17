@@ -4,6 +4,7 @@ import random
 import time
 import pickle
 from LSH_graph_Bar import LSH_graph
+from battleships import battleships_graph
 from Kasai import Kasai
 import argparse
 import json
@@ -19,39 +20,33 @@ class TopKSelection:
                  weak_supervision=True, without_DA=False):
         torch.manual_seed(seed)
         random.seed(seed)
-        self.task = task  # The name of the target task
-        self.source_task = SourceTask  # The name of the source task
-        self.k = k  # How many samples to choose
-        self.iter = iteration  # The number of the current iteration
-        self.mode = mode  # How to choose samples
-        self.files_path = files_path  # Path to the location where input data is and where raw data saved
-        self.orig_train = orig_train_path  # Full path to train data
-        self.seed = seed  # Seed
-        self.iterations = iterations  # The total number of iterations to perform
-        self.intent = intent_num  # FlexER
-        # Path to location where the current train, available pool and test will be saved
+        self.task = task
+        self.source_task = SourceTask
+        self.k = k
+        self.iter = iteration
+        self.mode = mode
+        self.files_path = files_path
+        self.orig_train = orig_train_path
+        self.seed = seed
+        self.iterations = iterations
+        self.intent = intent_num  # Irrelevant
         self.output_path = output_path
-        self.criterion = criterion  # Criterion for centrality calculation
-        # How many samples from D' are removed in a single iteration (where D_rep in mode)
-        self.replaced_samples_size = replace_param * k
+        self.criterion = criterion
+        self.replaced_samples_size = replace_param * k # Irrelevant
         self.weak_supervision = weak_supervision
         self.from_iter = from_iter
         self.without_da = without_DA
-        self.original_input = self.get_original_input(self.orig_train)  # Raw training input pairs
+        self.original_input = self.get_original_input(self.orig_train)
         self.handle_from_iter()
         self.available_pool_ids = self.get_available_pool_ids()
-        # Row indices of available pool (as appeared in the original data)
         self.available_pool, self.pool_to_original = self.get_available_pool()
-        # List of records available for pooling, and their corresponding indices in the original file.
         self.current_train_ids, self.high_confidence_positive, self.high_confidence_negative = self.handle_new_train_ids()
-        # high_confidence_positive, high_confidence_negative are available only in case of self.mode = top_k_Kasai
         self.D_prime_neg_labels = self.get_D_prime_neg_labels()
         self.removed_from_D_prime = self.get_removed_idxs()
-        self.current_train = self.get_new_train()  # List of records to train on, from source and target.
+        self.current_train = self.get_new_train()
         self.write_pairs2file('pool')
         self.write_pairs2file('train')
         self.create_weak_file()
-        # self.pairs_ids, self.ids_pairs = self.get_pairs_ids()
 
     def handle_new_train_ids(self):
         if "Kasai" in self.mode:
@@ -80,8 +75,8 @@ class TopKSelection:
 
     def get_available_pool(self):
         """
-        For each record in the original input, check if it is still available to pool.
-        If so, include it in this iteration available pool.
+        For each record in the original input, check if it is still part of the available pool.
+        If it is, include it in this iteration available pool.
         available_pool - list with relevant pairs.
         pool_to_original - the indices of the available_pool records in the original file.
         """
@@ -196,11 +191,6 @@ class TopKSelection:
         return
 
     def get_new_train_ids(self):
-        """
-        Use the given mode to pool K records out of the records available for pool, to use for training in the next
-        iteration. for first iteration, return None (the model havn't yet trained over D') for random - select K
-        random records. for top_k - use the battleship approach
-        """
         ws_pos_cands, ws_neg_cands = {}, {}
         if "only_selected" in self.mode:
             return self.find_all_selected(), None, None
@@ -356,7 +346,7 @@ class TopKSelection:
         return current_train
 
     def get_current_train_ws(self, current_train):
-        weak_ids_orig = self.find_weaks_ids()
+        weak_ids_orig = self.find_weak_ids()
         weak_ids_tmp = set()
         counter = 0
         for idx, pair in enumerate(self.original_input):
@@ -396,7 +386,7 @@ class TopKSelection:
             orig_mapping[pair] = idx
         return orig_mapping
 
-    def find_weaks_ids(self):
+    def find_weak_ids(self):
         pkl_file = open(self.files_path + 'weak_ids.pkl', 'rb')
         weak_ids = pickle.load(pkl_file)
         pkl_file.close()
@@ -411,11 +401,8 @@ class TopKSelection:
         return pair
 
     def read_only_selected(self):
-        current_train = []
-        for idx, pair in enumerate(self.original_input):
-            if idx in self.current_train_ids:
-                current_train.append(pair)
-        return current_train
+        return [pair for idx, pair in enumerate(self.original_input)
+                if idx in self.current_train_ids]
 
     def get_pairs_ids(self):
         """
@@ -434,28 +421,21 @@ class TopKSelection:
         return Kasai_obj.likely_false, Kasai_obj.high_confidence_positive, Kasai_obj.high_confidence_negative
 
     def find_top_k(self):
-        """
-        Find the top K samples using the LSH_graph.
-        Return the indices of the selected samples from available_pool_ids
-        """
         ws_pos_cands, ws_neg_cands = None, None
         poolers_path = self.define_poolers_path()
         # Path to available pool (including last iteration predictions)
         poolers_path_available_pool = poolers_path.replace("data", "output")
         # Path to current train (including source), (including last iteration predictions)
         poolers_path_current_train = poolers_path_available_pool.replace("available_pool", "current_train")
-        LSH_graph_obj = LSH_graph([poolers_path_available_pool, poolers_path_current_train],
-                                  self.k, self.seed, self.files_path, self.output_path, self.iter,
-                                  self.criterion, self.mode)
-        selected_k = LSH_graph_obj.get_selected_k
+        graph_obj = battleships_graph([poolers_path_available_pool, poolers_path_current_train],
+                                      self.k, self.seed, self.files_path, self.output_path, self.iter,
+                                      self.criterion, self.mode)
+        selected_k = graph_obj.get_selected_k
         if self.weak_supervision:
-            ws_pos_cands, ws_neg_cands = LSH_graph_obj.get_weakly_supervised
+            ws_pos_cands, ws_neg_cands = graph_obj.get_weakly_supervised
         return selected_k, ws_pos_cands, ws_neg_cands
 
     def define_poolers_path(self):
-        """
-        Generate the path to the location where the available pool files are saved
-        """
         task = self.task.split('/')[1]
         source_task = self.output_path.split('/')[-2]
         if "train" + str(self.intent) + ".txt" in self.orig_train:
@@ -543,16 +523,16 @@ class TopKSelection:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="WDC/wdc_cameras_title_medium")
-    parser.add_argument("--source_task", type=str, default="WDC/wdc_shoes_title_medium")
+    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
+    parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
-    parser.add_argument("--iter_num", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="battleships_ws_b_alpha=0.5")
+    parser.add_argument("--iter_num", type=int, default=2)
+    parser.add_argument("--mode", type=str, default="battleships_ws_b_alpha=0.3")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--criterion", type=str, default="pagerank")
-    parser.add_argument("--output_path", type=str, default="output/wdc/cameras/title/shoes/")
+    parser.add_argument("--output_path", type=str, default="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/")
     parser.add_argument("--from_iter", type=int, default=0)
     start = time.time()
     hp = parser.parse_args()
