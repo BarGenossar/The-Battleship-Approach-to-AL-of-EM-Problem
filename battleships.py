@@ -21,9 +21,8 @@ import faiss
 class battleships_graph:
     def __init__(self, poolers_paths, k, seed, files_path, output_path, iteration, criterion='pagerank',
                  mode='top_k', weights_type='with_threshold',
-                 lsh_iterations=10, dim=768, pos_threshold_cond=0.5,
-                 pos_budget=0.5, edges_threshold=0.75, sim_threshold=0.4,
-                 adapted_sim_threshold=0.9, min_cc_ratio=0.03, max_cc_ratio=0.15,
+                 lsh_iterations=10, dim=768,
+                 min_cc_ratio=0.03, max_cc_ratio=0.15,
                  nearest_param=25, treat_weak_labels=True):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -36,9 +35,6 @@ class battleships_graph:
         self.weights_type = weights_type
         self.dim = dim
         self.lsh_iterations = lsh_iterations
-        self.edges_threshold = edges_threshold
-        self.sim_threshold = sim_threshold
-        self.adapted_sim_threshold = adapted_sim_threshold
         self.criterion = criterion
         self.mode = mode
         self.nearest_param = nearest_param
@@ -67,7 +63,6 @@ class battleships_graph:
         self.neg_graph, self.neg_connected_components, self.neg_ccs_available_pool_sizes = self.from_lsh2graph_type(0)
         self.het_graph, self.het_connected_components, self.het_ccs_available_pool_sizes = self.from_lsh2graph_type(2)
         self.validate_connected_components()
-        # self.cc_labels = self.assign_cc_labels(pos_threshold_cond)
         # self.pos_old_connected_components = self.clean_old_train_pos()
         # self.neg_old_connected_components = self.clean_old_train_neg()
         # self.positive_graph_ids, self.positive_CCs_size = self.calc_CCs_type_size(1)
@@ -75,7 +70,7 @@ class battleships_graph:
         # self.positive_budget_dict, self.negative_budget_dict = self.distribute_budget()
         self.positive_budget_dict = self.distribute_budget(1)
         self.negative_budget_dict = self.distribute_budget(0)
-        self.selected_k, self.pos_uncertainty, self.neg_uncertainty = self.calc_criterion()
+        self.selected_k, self.pos_uncertainty, self.neg_uncertainty, self.votes_dict = self.calc_criterion()
         self.ws_pos_cands, self.ws_neg_cands = self.find_weakly_supervised()
         # self.selected_k = self.calc_criterion_pos()
 
@@ -206,7 +201,7 @@ class battleships_graph:
         buckets2poolers = self.create_buckets(rel_ids, min_val)
         final_buckets2poolers, bucket_parents = self.iteative_bucketing(buckets2poolers, min_val, max_val)
         graph = self.initialize_graph(rel_ids)
-        graph = self.connect_nodes(graph, final_buckets2poolers)
+        graph = self.connect_nodes(graph, final_buckets2poolers, label_type)
         connected_components = self.create_connected_components(graph)
         light_conncted_components = self.get_light_connected_components(connected_components)
         ccs_available_pool_sizes = self.calc_CCS_available_pool_sizes(connected_components)
@@ -688,7 +683,8 @@ class battleships_graph:
             edges_set.add((pair[0], pair[1]))
         return edges_set
 
-    def create_bucket_edges(self, bucket_ids, automatic_edges_num=5, edges_ratio=0.05):
+    def create_bucket_edges(self, bucket_ids, label_type, automatic_edges_num=5, edges_ratio=0.05):
+        automatic_edges_num = automatic_edges_num if label_type < 2 else 3 * automatic_edges_num
         rel_poolers = np.array([self.poolers[pooler_id] for pooler_id in bucket_ids], dtype="float32")
         bucket2orig = {idx: pooler_id for idx, pooler_id in enumerate(bucket_ids)}
         d = len(self.poolers[0])
@@ -704,8 +700,10 @@ class battleships_graph:
                                                                                    automatic_edges_num,
                                                                                    candidate_neighbors_dict,
                                                                                    bucket2orig)
-        candidate_neighbors_dict = {k: v for k, v in sorted(candidate_neighbors_dict.items(), key=lambda item: item[1])}
-        edges_set = self.process_candidates(candidate_neighbors_dict, edges_ratio, edges_set)
+        if label_type < 2:
+            candidate_neighbors_dict = {k: v for k, v in sorted(candidate_neighbors_dict.items(),
+                                                                key=lambda item: item[1])}
+            edges_set = self.process_candidates(candidate_neighbors_dict, edges_ratio, edges_set)
         return edges_set
 
     @staticmethod
@@ -715,7 +713,7 @@ class battleships_graph:
             final_edge_set.update(bucket_edges)
         return final_edge_set
 
-    def connect_nodes(self, graph, buckets2poolers):
+    def connect_nodes(self, graph, buckets2poolers, label_type):
         """
         Add edges between nodes only when at least one of them belongs to the available pool,
         and within the same bucket.
@@ -727,7 +725,8 @@ class battleships_graph:
         # for bucket in buckets2poolers.values():
         #     edges_set.update(list(self.create_bucket_edges(bucket)))
         with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
-            edges_set_per_bucket = list(pool.map(self.create_bucket_edges, buckets2poolers.values()))
+            edges_set_per_bucket = list(pool.starmap(self.create_bucket_edges, zip(buckets2poolers.values(),
+                                                                                   repeat(label_type))))
         final_edge_set = self.create_final_edge_set(edges_set_per_bucket)
         with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
             final_pairs_weight = list(pool.map(self.calc_pair_weight, final_edge_set))
@@ -808,13 +807,13 @@ class battleships_graph:
     def calc_criterion(self):
         pos_centrality = self.calc_centrality(1)
         neg_centrality = self.calc_centrality(0)
-        pos_uncertainty, neg_uncertainty = self.calc_uncertainty()
+        pos_uncertainty, neg_uncertainty, votes_dict = self.calc_uncertainty()
         pos_selected = self.find_candidates(pos_centrality, pos_uncertainty, 1)
         neg_selected = self.find_candidates(neg_centrality, neg_uncertainty, 0)
         selected_k = pos_selected + neg_selected
         self.save_to_pkl([pos_centrality, neg_centrality, pos_uncertainty, neg_uncertainty, selected_k],
                          ["pos_centrality", "neg_centrality", "pos_uncertainty", "neg_uncertainty", "selected_k"])
-        return selected_k, pos_uncertainty, neg_uncertainty
+        return selected_k, pos_uncertainty, neg_uncertainty, votes_dict
 
     # def calc_criterion_pos(self):
     #     pos_centrality = self.calc_centrality(self.connected_components.keys())
@@ -876,30 +875,36 @@ class battleships_graph:
         """
         Perform the required uncertainty calculation.
         """
-        entropy_dict = self.calc_neighbors_uncertainty()
+        entropy_dict, votes_dict = self.calc_neighbors_uncertainty()
         pos_uncertainty = self.create_uncertainty_dict(1, entropy_dict)
         neg_uncertainty = self.create_uncertainty_dict(0, entropy_dict)
-        return pos_uncertainty, neg_uncertainty
+        return pos_uncertainty, neg_uncertainty, votes_dict
 
-    def calc_neighbors_uncertainty(self):
-        votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
+    def calc_neighbors_uncertainty(self, entropy_param=0.5):
+        final_entropy_dict, uncertainty_dict, votes_dict = dict(), dict(), dict()
         conf_dict = self.create_conf_dict()
         for graph_id, graph in self.het_connected_components.items():
-            graph_size = len(graph)
             for pooler_id in graph:
-                if pooler_id >= self.available_pool_size and len(graph[pooler_id]) > 0.1 * graph_size:
+                if pooler_id >= self.available_pool_size:
                     continue
-                votes_values[pooler_id] = dict()
-                votes_values[pooler_id][0] = 0
-                votes_values[pooler_id][1] = 0
-                for neighbor in graph[pooler_id]:
-                    weight = graph[pooler_id][neighbor]['weight']
-                    if neighbor < self.available_pool_size:
-                        votes_values[pooler_id][self.pool_predictions[neighbor]] += weight * conf_dict[neighbor]
-                    else:
-                        votes_values[pooler_id][self.training_labels[neighbor]] += weight * conf_dict[neighbor]
-                entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
-        return entropy_dict
+                regular_entropy = self.calc_entropy_scalar(conf_dict[pooler_id])
+                votes_values = self.crete_votes_dict(pooler_id, graph, conf_dict)
+                neighborhood_entropy = self.calc_neighborhood_entropy(votes_values)
+                votes_dict[pooler_id] = votes_values
+                final_entropy_dict[pooler_id] = entropy_param * regular_entropy + \
+                                                (1 - entropy_param) * neighborhood_entropy
+        return final_entropy_dict, votes_dict
+
+    def crete_votes_dict(self,pooler_id, graph, conf_dict):
+        votes_values = {0: 0, 1: 0}
+        for neighbor in graph[pooler_id]:
+            weight = graph[pooler_id][neighbor]['weight']
+            if neighbor < self.available_pool_size:
+                votes_values[self.pool_predictions[neighbor]] += weight * conf_dict[neighbor]
+            else:
+                votes_values[self.training_labels[neighbor]] += weight * conf_dict[neighbor]
+        return votes_values
+
 
     def create_uncertainty_dict(self, label_type, entropy_dict):
         uncertainty_dict = dict()
@@ -909,48 +914,48 @@ class battleships_graph:
             uncertainty_dict[graph_id] = self.rank_it(current_entropy_dict)
         return uncertainty_dict
 
-    # def calc_neighbors_uncertainty_old(self, label_type):
-    #     votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
-    #     ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
-    #     old_ccs_copy = self.pos_old_connected_components if label_type == 1 else self.neg_old_connected_components.copy()
-    #     for graph_id in ccs_copy.keys():
-    #         for pooler_id in ccs_copy[graph_id]:
-    #             votes_values[pooler_id] = dict()
-    #             votes_values[pooler_id][0] = 0
-    #             votes_values[pooler_id][1] = 0
-    #             for neighbor in old_ccs_copy[graph_id][pooler_id]:
-    #                 weight = old_ccs_copy[graph_id][pooler_id][neighbor]['weight']
-    #                 if neighbor < self.available_pool_size:
-    #                     continue
-    #                     # votes_values[pooler_id][self.pool_predictions[neighbor]] += weight
-    #                 else:
-    #                     votes_values[pooler_id][self.training_labels[neighbor]] += weight
-    #             entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
-    #         uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
-    #     return uncertainty_dict
-
-    # def calc_prediction_uncertainty(self, label_type):
-    #     votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
-    #     ccs_copy = self.pos_connected_components.copy() if label_type == 1 else self.neg_connected_components.copy()
-    #     for graph_id in ccs_copy.keys():
-    #         for pooler_id in ccs_copy[graph_id]:
-    #             votes_values[pooler_id] = dict()
-    #             prediction = self.pool_predictions[pooler_id]
-    #             confidence = self.confidence_dict[pooler_id]
-    #             votes_values[pooler_id][prediction] = confidence
-    #             votes_values[pooler_id][1 - prediction] = 1 - confidence
-    #             entropy_dict[pooler_id] = self.calc_entropy(votes_values[pooler_id])
-    #         uncertainty_dict[graph_id] = self.rank_it(entropy_dict)
-    #     return uncertainty_dict
+    @staticmethod
+    def calc_entropy_scalar(conf_val):
+        try:
+            entropy = -conf_val * log2(conf_val) - (1 - conf_val) * log2(1 - conf_val)
+            return entropy
+        except:
+            return 0
 
     @staticmethod
-    def calc_entropy(pooler_votes_values):
+    def calc_neighborhood_entropy(pooler_votes_values):
         try:
             p = pooler_votes_values[1] / (pooler_votes_values[1] + pooler_votes_values[0])
             entropy = -p * log2(p) - (1 - p) * log2(1 - p)
             return entropy
         except:
             return 0
+
+
+    # def calc_neighbors_uncertainty(self):
+    #     votes_values, entropy_dict, uncertainty_dict = dict(), dict(), dict()
+    #     conf_dict = self.create_conf_dict()
+    #     for graph_id, graph in self.het_connected_components.items():
+    #         rel_poolers = [pooler_id for pooler_id in graph if pooler_id < self.available_pool_size]
+    #         with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 3) - 1) as pool:
+    #             entropy_vals = pool.starmap(self.calc_pooler_entropy, zip(rel_poolers,
+    #                                                                       repeat(graph),
+    #                                                                       repeat(conf_dict)))
+    #         entropy_dict.update({pooler_id: entropy_val for pooler_id, entropy_val in entropy_vals})
+    #     return entropy_dict
+    #
+    # def calc_pooler_entropy(self, pooler_id, graph, conf_dict):
+    #     votes_values = dict()
+    #     votes_values[0] = 0
+    #     votes_values[1] = 0
+    #     for neighbor in graph[pooler_id]:
+    #         weight = graph[pooler_id][neighbor]['weight']
+    #         if neighbor < self.available_pool_size:
+    #             votes_values[self.pool_predictions[neighbor]] += weight * conf_dict[neighbor]
+    #         else:
+    #             votes_values[self.training_labels[neighbor]] += weight * conf_dict[neighbor]
+    #     return pooler_id, self.calc_entropy(votes_values)
+
 
     @staticmethod
     def rank_it(input_dict):
@@ -1034,7 +1039,9 @@ class battleships_graph:
             curr_idx = 0
             cc_cands = []
             while available_budget and curr_idx < len(sorted_uncertainty):
-                if sorted_uncertainty[curr_idx][0] in ws_candidates:
+                curr_pooler = sorted_uncertainty[curr_idx][0]
+                if curr_pooler in ws_candidates and \
+                        self.votes_dict[curr_pooler][label_type] > self.votes_dict[curr_pooler][1-label_type]:
                     cc_cands.append(sorted_uncertainty[curr_idx][0])
                     available_budget -= 1
                 curr_idx += 1

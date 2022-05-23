@@ -527,7 +527,7 @@ if __name__ == "__main__":
     parser.add_argument("--source_task", type=str, default="Structured/Walmart-Amazon")
     parser.add_argument("--intent", type=int, default=0)
     parser.add_argument("--k_size", type=int, default=100)
-    parser.add_argument("--iter_num", type=int, default=2)
+    parser.add_argument("--iter_num", type=int, default=1)
     parser.add_argument("--mode", type=str, default="battleships_ws_b_alpha=0.3")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=10)

@@ -7,12 +7,12 @@ Iterations=$2;
 
 Seeds=$3;
 
-TaskName="WDC/wdc_shoes_title_medium"
-SourceTask="WDC/wdc_cameras_title_medium"
+#TaskName="WDC/wdc_shoes_title_medium"
+#SourceTask="WDC/wdc_cameras_title_medium"
 #TaskName="WDC/wdc_cameras_title_medium"
 #SourceTask="WDC/wdc_shoes_title_medium"
-#TaskName="Structured/Amazon-Google"
-#SourceTask="Structured/Walmart-Amazon"
+TaskName="Structured/Amazon-Google"
+SourceTask="Structured/Walmart-Amazon"
 #TaskName="Structured/Walmart-Amazon"
 #SourceTask="Structured/Amazon-Google"
 
@@ -32,13 +32,18 @@ SourceTask="WDC/wdc_cameras_title_medium"
 
 # Mode="top_k_cliques"
 # Modes=("battleships_ws_k" "battleships_ws_b" "battleships" "top_k_Kasai" "random" "all_D")
-Modes=("battleships_ws_b_alpha=0.1" "battleships_ws_b_alpha=0.3" "battleships_ws_b_alpha=0.5" "battleships_ws_b_alpha=0.7" \
-"battleships_ws_b_alpha=0.9" "dummy")
+#Modes=("battleships_ws_b_alpha=0.1" "battleships_ws_b_alpha=0.3" "battleships_ws_b_alpha=0.5" "battleships_ws_b_alpha=0.7" \
+#"battleships_ws_b_alpha=0.9" "dummy")
+Modes=("battleships_ws_b_alpha=0.25" "battleships_ws_b_alpha=0.5" "battleships_ws_b_alpha=0.75" \
+"battleships_ws_b_alpha=1.0" "battleships_ws_b_alpha=0.0" "battleships_ws_k_alpha=0.5" \
+"top_k_Kasai" "dummy")
 #Mode="all_D"
-#InputPath="data/er_magellan/Structured/Amazon-Google/"
-#OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"
-InputPath="data/wdc/shoes/title/"
-OutputPath="output/wdc/shoes/title/cameras/"
+InputPath="data/er_magellan/Structured/Amazon-Google/"
+OutputPath="output/er_magellan/Structured/Amazon-Google/Walmart-Amazon/"
+#InputPath="data/er_magellan/Structured/Walmart-Amazon/"
+#OutputPath="output/er_magellan/Structured/Walmart-Amazon/Amazon-Google/"
+#InputPath="data/wdc/shoes/title/"
+#OutputPath="output/wdc/shoes/title/cameras/"
 #InputPath="data/wdc/cameras/title/"
 #OutputPath="output/wdc/cameras/title/shoes/"
 
@@ -53,9 +58,9 @@ declare -i Batch=12
 declare -i N_Epochs=15
 
 
-for Mode in ${Modes[*]}:
+for (( seed=1; seed<=Seeds; seed++ ))
 do
-  for (( seed=1; seed<=Seeds; seed++ ))
+  for Mode in ${Modes[*]}:
   do
     for (( iter=0; iter<=Iterations; iter++ ))
     do
