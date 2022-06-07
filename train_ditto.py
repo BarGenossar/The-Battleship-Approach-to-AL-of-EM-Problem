@@ -11,20 +11,20 @@ from ditto.knowledge import *
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="Structured/Beer")
+    parser.add_argument("--task", type=str, default="Structured/Amazon-Google")
     parser.add_argument("--run_id", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--max_len", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=12)
+    parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--n_epochs", type=int, default=15)
-    parser.add_argument("--training_type", type=str, default="regular")
+    parser.add_argument("--n_epochs", type=int, default=3)
+    parser.add_argument("--training_type", type=str, default="active_learning")
     parser.add_argument("--finetuning", dest="finetuning", action="store_true")
     parser.add_argument("--save_model", dest="save_model", action="store_true")
     parser.add_argument("--logdir", type=str, default="checkpoints/")
-    parser.add_argument("--lm", type=str, default='distilbert')
+    parser.add_argument("--lm", type=str, default='roberta')
     parser.add_argument("--bert_path", type=str, default=None)
     parser.add_argument("--fp16", dest="fp16", action="store_true")
-    parser.add_argument("--da", type=str, default="del")
+    parser.add_argument("--da", type=str, default=None)
     parser.add_argument("--alpha_aug", type=float, default=0.8)
     parser.add_argument("--dk", type=str, default=None)
     parser.add_argument("--summarize", dest="summarize", action="store_true")
@@ -34,6 +34,8 @@ if __name__=="__main__":
     parser.add_argument("--intents_num", type=int, default=1)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--with_intents", type=int, default=1)
+    parser.add_argument("--mode", type=str, default=None)
+
 
 
     hp = parser.parse_args()
@@ -47,7 +49,8 @@ if __name__=="__main__":
 
     print("=======================start training=======================")
     for intent in range(hp.intents_num):
-
+        if "dummy" in hp.mode:
+            break
         # create the tag of the run
         if hp.with_intents == 1:
             task = main_task + str(intent)

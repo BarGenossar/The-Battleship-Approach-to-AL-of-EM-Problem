@@ -28,6 +28,9 @@ def train(model, train_set, optimizer, seed, scheduler=None, batch_size=32, fp16
     classifier_criterion = nn.CrossEntropyLoss()
     regression_criterion = nn.MSELoss()
 
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
     model.train()
     for i, batch in enumerate(iterator):
         # for monitoring

@@ -139,6 +139,8 @@ def train(model, l_set, aug_set, optimizer,
     Returns:
         None
     """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     mixda_batches = create_mixda_batches(l_set,
                                          aug_set,
                                          batch_size=batch_size)

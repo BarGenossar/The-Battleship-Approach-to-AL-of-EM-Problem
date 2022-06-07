@@ -72,7 +72,7 @@ def classify(sentence_pairs, config, model, file_type, seed, lm='distilbert',
 
     dataset = DittoDataset(inputs, config['vocab'], config['name'], seed, lm=lm, max_len=max_len)
     iterator = data.DataLoader(dataset=dataset,
-                               batch_size=64,
+                               batch_size=16,
                                shuffle=False,
                                num_workers=0,
                                collate_fn=DittoDataset.pad)
@@ -271,6 +271,8 @@ if __name__ == "__main__":
     else:
         file_types = ['test']
     for intent in range(hp.intents_num):
+        if "dummy" in hp.mode:
+            break
         for file_type in file_types:
             # create the tag of the run
             # if hp.with_intents == 1:

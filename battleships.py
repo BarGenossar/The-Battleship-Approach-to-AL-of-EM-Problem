@@ -53,7 +53,7 @@ class battleships_graph:
                               if self.pool_predictions[pooler_id]}
         self.neg_preds_ids = {pooler_id for pooler_id in self.pool_predictions.keys()
                               if not self.pool_predictions[pooler_id]}
-        self.pos_budget = min(round(self.k * (1 - 0.05 * iteration)), len(self.pos_preds_ids))
+        self.pos_budget = min(max(round(self.k * (0.85 - 0.05 * iteration)), round(0.5 * self.k)), len(self.pos_preds_ids))
         self.min_cc_ratio = min_cc_ratio
         self.max_cc_ratio = max_cc_ratio
         # self.min_val = int(min_cc_ratio * len(self.pos_preds_ids))  # The actual size of the smallest possible CC
@@ -89,15 +89,23 @@ class battleships_graph:
         """
         Load the available pool CLS vectors and save a mapping from row indices (in the pooler file) to the CLSs
         """
+
+        """
+        pooler_path = self.poolers_paths[0].replace(".txt", "_poolers.pkl")
+        pkl_file = open(pooler_path, 'rb')
+        poolers_dict = pickle.load(pkl_file)
+        pkl_file.close()
+        """
+        pooler_path = self.poolers_paths[0]
         poolers_dict = dict()
         # self.poolers_paths[0] is the poolers file of the available pool
-        pooler_path = self.poolers_paths[0]
         preds_file = open(pooler_path, "r", encoding="utf-8")
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
             pooler = line.split('pooler')[1][3:-2].replace('[', '').replace(',', '').replace(']', '')
             poolers_dict[id_val] = np.array(list(map(float, pooler.split(' '))))
         preds_file.close()
+
         return poolers_dict
 
     def find_weaks(self):
@@ -113,12 +121,21 @@ class battleships_graph:
         """
         # self.poolers_paths[1] is the poolers file of the current train
         pooler_path = self.poolers_paths[1]
+        """
+        pooler_path = self.poolers_paths[1].replace(".txt", "_poolers.pkl")
+        pkl_file = open(pooler_path, 'rb')
+        tmp_poolers_dict = pickle.load(pkl_file)
+        pkl_file.close()
+        poolers_dict.update({id_val + available_pool_size: pooler
+                            for id_val, pooler in tmp_poolers_dict.items()})
+        """
         preds_file = open(pooler_path, "r", encoding="utf-8")
         lines_preds = preds_file.readlines()
         for id_val, line in enumerate(lines_preds):
             pooler = line.split('pooler')[1][3:-2].replace('[', '').replace(',', '').replace(']', '')
             poolers_dict[id_val + available_pool_size] = np.array(list(map(float, pooler.split(' '))))
         preds_file.close()
+
         return poolers_dict
 
     def create_labels(self):
@@ -139,6 +156,17 @@ class battleships_graph:
         """
         Create a mapping from row indices to PREDICTED label, for the available pool.
         """
+        """
+        dict_list = []
+        file_suffux_list = ["preds", "conf"]
+        for curr_suffix in file_suffux_list:
+            curr_path = self.poolers_paths[0].replace(".txt", "_" + curr_suffix + ".pkl")
+            pkl_file = open(curr_path, 'rb')
+            curr_dict = pickle.load(pkl_file)
+            pkl_file.close()
+            dict_list.append(curr_dict)
+
+        """
         preditions_dict, confidence_dict = dict(), dict()
         pooler_path = self.poolers_paths[0]
         preds_file = open(pooler_path, "r", encoding="utf-8")
@@ -149,6 +177,7 @@ class battleships_graph:
             if preditions_dict[id_val] != 0 and preditions_dict[id_val] != 1:
                 pass
         preds_file.close()
+
         return preditions_dict, confidence_dict
 
     def create_weak_labels_confidence(self):
@@ -165,6 +194,28 @@ class battleships_graph:
                                                             line.split("match_confidence")[1].split("pooler")[0]))
         labels_file.close()
         return confidence_dict
+
+
+    # def create_weak_labels_confidence(self):
+    #
+    #     # Create a mapping from row indices to PREDICTED label, for the available pools.
+    #     indent = self.available_pool_size
+    #     # conf_path = self.poolers_paths[1].replace(".txt", "_conf.pkl")
+    #     conf_path = self.poolers_paths[1]
+    #     # pkl_file = open(conf_path, 'rb')
+    #     # tmp_conf_dict = pickle.load(pkl_file)
+    #     pkl_file.close()
+    #     # confidence_dict = {id_val + indent: pooler for id_val, pooler in tmp_conf_dict.items()}
+    #
+    #     """
+    #     labels_file = open(pooler_path, "r", encoding="utf-8")
+    #     lines_preds = labels_file.readlines()
+    #     for id_val, line in enumerate(lines_preds):
+    #         confidence_dict[id_val + indent] = float(re.sub("[^0-9.]", "",
+    #                                                         line.split("match_confidence")[1].split("pooler")[0]))
+    #     labels_file.close()
+    #     """
+    #     return confidence_dict
 
     # def from_lsh2graph(self, poolers_ids):
     #     buckets2poolers = self.create_buckets(poolers_ids)

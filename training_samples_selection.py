@@ -12,7 +12,6 @@ import torch
 import os
 import re
 
-
 class TopKSelection:
     def __init__(self, task, SourceTask, k, iteration, mode, files_path,
                  orig_train_path, seed, iterations, output_path, from_iter,
@@ -557,9 +556,13 @@ if __name__ == "__main__":
     path = configs[task + str(intent)]['path']
     orig_train = configs[task + str(intent)]['trainset']
     source_task += str(intent)
-    top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode,
-                                  path, orig_train, seed, iterations, output_path,
-                                  from_iter, criterion)
+    if "dummy" not in selection_mode:
+        top_k_manager = TopKSelection(task, source_task, k_size, iter_num, selection_mode,
+                                      path, orig_train, seed, iterations, output_path,
+                                      from_iter, criterion)
+    else:
+        "dummy mode"
+        print()
     end = time.time()
 
     print(f'The process took :{round(end - start, 2)} seconds')
