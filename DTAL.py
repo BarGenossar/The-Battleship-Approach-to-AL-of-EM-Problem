@@ -2,7 +2,7 @@ import re
 import math
 
 
-class Kasai:
+class DTAL:
     def __init__(self, available_pool_path, k):
         self.available_pool_path = available_pool_path
         self.k = k

@@ -3,9 +3,8 @@ import networkx as nx
 import random
 import time
 import pickle
-from LSH_graph_Bar import LSH_graph
 from battleships import battleships_graph
-from Kasai import Kasai
+from DTAL import DTAL
 import argparse
 import json
 import torch
@@ -48,17 +47,12 @@ class TopKSelection:
         self.create_weak_file()
 
     def handle_new_train_ids(self):
-        if "Kasai" in self.mode:
-            return self.get_new_train_ids_Kasai()
+        if "DTAL" in self.mode:
+            return self.get_new_train_ids_DTAL()
         else:
             return self.get_new_train_ids()
 
     def get_available_pool_ids(self):
-        """
-        return a set contains the row indices of the available pool.
-        if self.iter == 0, generate one and pickle it out in files_path.
-        otherwise, load it from files_path and return it.
-        """
         if self.mode == "all_D" or "only_selected" in self.mode:
             return None
         if self.iter == 0:
@@ -73,12 +67,6 @@ class TopKSelection:
         return available_pool_ids
 
     def get_available_pool(self):
-        """
-        For each record in the original input, check if it is still part of the available pool.
-        If it is, include it in this iteration available pool.
-        available_pool - list with relevant pairs.
-        pool_to_original - the indices of the available_pool records in the original file.
-        """
         if self.mode == "all_D" or "only_selected" in self.mode:
             return None, None
         available_pool = []
@@ -95,9 +83,8 @@ class TopKSelection:
     def handle_from_iter(self):
         if self.from_iter == 0 or self.from_iter != self.iter:
             return
-        # Update available_pool_ids.pkl according to previous documentation
         available_pool = set([idx for idx in range(len(self.original_input))])
-        if "Kasai" in self.mode:
+        if "DTAL" in self.mode:
             files_list = ["selected_k_pool_to_original_iter", "high_confidence_negative_k_pool_to_original_iter",
                           "high_confidence_positive_k_pool_to_original_iter"]
         else:
@@ -137,10 +124,6 @@ class TopKSelection:
         return
 
     def update_train_pkl(self, new_samples):
-        """
-        Update the current train pickle file (or create one) with the recently new chosen records.
-        Return a set contains the whole new current train (include the previous train).
-        """
         new_train = new_samples
         if self.iter > 1:
             pkl_file = open(self.files_path + 'current_train.pkl', 'rb')
@@ -153,10 +136,6 @@ class TopKSelection:
         return new_train
 
     def update_pool_pkl(self, selected_k):
-        """
-        Subtract the selected k records from the available_pool, save the new pickle file, and update
-        available_pool_ids, available_pool and pool_to_original with the new content and mapping.
-        """
         pkl_file = open(self.files_path + 'available_pool_ids.pkl', 'rb')
         available_pool_ids = pickle.load(pkl_file)
         pkl_file.close()
@@ -212,7 +191,7 @@ class TopKSelection:
         self.save_to_pkl(ws_neg_cands, "ws_neg_cands_pool_to_original")
         return updated_train_ids, None, None
 
-    def get_new_train_ids_Kasai(self):
+    def get_new_train_ids_DTAL(self):
         if self.iter == 0:
             if self.without_da:
                 selected_samples = set(random.sample(range(0, len(self.available_pool_ids)), self.k))
@@ -220,14 +199,14 @@ class TopKSelection:
             else:
                 return None, None, None
         else:
-            selected_samples, high_confidence_positive, high_confidence_negative = self.top_k_kasai()
+            selected_samples, high_confidence_positive, high_confidence_negative = self.top_k_DTAL()
             high_confidence_positive = {self.pool_to_original[idx] for idx in high_confidence_positive}
             high_confidence_negative = {self.pool_to_original[idx] for idx in high_confidence_negative}
         selected_samples = {self.pool_to_original[idx] for idx in selected_samples}
         self.save_to_pkls([selected_samples, high_confidence_positive, high_confidence_negative],
                           ["selected_k_pool_to_original", "high_confidence_positive_k_pool_to_original",
                            "high_confidence_negative_k_pool_to_original"])
-        if self.mode == "top_k_Kasai":
+        if self.mode == "top_k_DTAL":
             new_samples = set.union(selected_samples, high_confidence_positive, high_confidence_negative)
         updated_train_ids = self.update_train_pkl(new_samples)
         self.update_pool_pkl(new_samples)
@@ -249,9 +228,6 @@ class TopKSelection:
         return required_file
 
     def read_source_dataset(self):
-        """
-        Return a list contains record pairs from source task training file.
-        """
         current_train = []
         source_lines = self.get_source_lines()
         if self.without_da:
@@ -267,9 +243,6 @@ class TopKSelection:
 
     @staticmethod
     def find_file(source_task):
-        """
-        Find the path for the train file for the source task
-        """
         configs = json.load(open('configs.json'))
         configs = {conf['name']: conf for conf in configs}
         config = configs[source_task]
@@ -328,10 +301,6 @@ class TopKSelection:
         return removed_idxs
 
     def get_new_train(self):
-        """
-        Return a shuffled list of records to train on, contains the source task data and the recently chosen records
-        from the target task data.
-        """
         if self.mode == "all_D":
             return self.original_input
         elif "only_selected" in self.mode:
@@ -392,7 +361,7 @@ class TopKSelection:
         return weak_ids
 
     def modify_pair(self, idx, pair):
-        if self.mode == "top_k_Kasai":
+        if self.mode == "top_k_DTAL":
             if idx in self.high_confidence_positive:
                 pair = pair[:-2] + "1" + pair[-1:]
             elif idx in self.high_confidence_negative:
@@ -404,20 +373,17 @@ class TopKSelection:
                 if idx in self.current_train_ids]
 
     def get_pairs_ids(self):
-        """
-        Map pairs to indices and vice versa.
-        """
         pairs_ids_dict, ids_pairs_dict = dict(), dict()
         for idx, pair in enumerate(self.original_input):
             pairs_ids_dict[pair] = idx
             ids_pairs_dict[idx] = pair
         return pairs_ids_dict, ids_pairs_dict
 
-    def top_k_kasai(self):
+    def top_k_DTAL(self):
         poolers_path = self.define_poolers_path()
         poolers_path_available_pool = poolers_path.replace("data", "output")
-        Kasai_obj = Kasai(poolers_path_available_pool, self.k)
-        return Kasai_obj.likely_false, Kasai_obj.high_confidence_positive, Kasai_obj.high_confidence_negative
+        DTAL_obj = DTAL(poolers_path_available_pool, self.k)
+        return DTAL_obj.likely_false, DTAL_obj.high_confidence_positive, DTAL_obj.high_confidence_negative
 
     def find_top_k(self):
         ws_pos_cands, ws_neg_cands = None, None
@@ -452,13 +418,9 @@ class TopKSelection:
             if poolers_path[-4:] != ".txt":
                 poolers_path = poolers_path.split(".txt", 1)[0]
                 poolers_path += '.txt'
-        # poolers_path = poolers_path.replace('er_magellan/', '')
         return poolers_path
 
     def write_pairs2file(self, pairs_type):
-        """
-        Save records to txt files.
-        """
         if (self.mode == "all_D" or "only_selected" in self.mode) and \
                 pairs_type == 'pool':
             return
@@ -488,18 +450,12 @@ class TopKSelection:
 
     @staticmethod
     def get_original_input(orig_train_path):
-        """
-        Load train pairs from orig_train_path to training_lines
-        """
         training_file = open(orig_train_path, "r", encoding="utf-8")
         training_lines = training_file.readlines()
         training_file.close()
         return training_lines
 
     def save_to_pkl(self, file, file_name):
-        """
-        Save an object to a pickle file, in a path generated from self.output_path, self.mode, iter and seed.
-        """
         path = self.output_path + self.mode + "/pkl_files/"
         if not os.path.exists(path):
             os.makedirs(path)
@@ -545,8 +501,6 @@ if __name__ == "__main__":
     seed = hp.seed
     from_iter = hp.from_iter
 
-    # if "only_selected" in mode then iterations = 0 in the call for main.sh but in this file it must be
-    # the original number of iterations
     iterations = hp.iterations
     criterion = hp.criterion
     output_path = hp.output_path

@@ -56,22 +56,12 @@ if __name__=="__main__":
             task = main_task + str(intent)
         else:
             task = main_task
-        # run_tag = '%s_lm=%s_da=%s_dk=%s_su=%s_size=%s_id=%d' % (task, hp.lm, hp.da,
-        #                                                         hp.dk, hp.summarize,
-        #                                                         str(hp.size), hp.run_id)
-        # run_tag = run_tag.replace('/', '_')
-
-        # run_tag = main_task + str(intent)
         run_tag = 'checkpoints/' + main_task + '/'
 
         # load task configuration
         configs = json.load(open('configs.json'))
         configs = {conf['name']: conf for conf in configs}
         config = configs[task]
-
-        # config['trainset'] = config['trainset'].replace('train.txt', "Intents/" + str(intent) + "/train.txt")
-        # config['validset'] = config['validset'].replace('valid.txt', "Intents/" + str(intent) + "/valid.txt")
-        # config['testset'] = config['testset'].replace('test.txt', "Intents/" + str(intent) + "/test.txt")
 
         if training_type == "active_learning":
             trainset = config['current_train']
@@ -82,10 +72,6 @@ if __name__=="__main__":
 
         validset = config['validset']
         testset = config['testset']
-
-        # trainset = trainset.replace('train.txt', "Intent/" + str(intent) + "/train.txt")
-        # validset = validset.replace('valid.txt', "Intent/" + str(intent) + "/valid.txt")
-        # testset = testset.replace('test.txt', "Intent/" + str(intent) + "/test.txt")
 
         task_type = config['task_type']
         vocab = config['vocab']

@@ -201,7 +201,6 @@ def load_model(task, path, lm, use_gpu, seed, intent, fp16=True, trained_model=N
     configs = json.load(open('configs.json'))
     configs = {conf['name']: conf for conf in configs}
     config = configs[task]
-    config_list = [config]
 
     if trained_model:
         checkpoint = os.path.join(path, '%s.pt' % trained_model)
@@ -252,7 +251,6 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--training_type", type=str, default="regular")
     parser.add_argument("--with_intents", type=int, default=1)
-    # parser.add_argument("--trained_model", type=str, default="WDC/wdc_computers_title_small/wdc_computers_title_small0")
     parser.add_argument("--trained_model", type=str, default=None)
     parser.add_argument("--mode", type=str, default=None)
 
@@ -265,7 +263,6 @@ if __name__ == "__main__":
     trained_model = hp.trained_model
     output_path = hp.output_path + str(hp.mode) + '/'
 
-    # file_types = ['train', 'valid', 'test']
     if training_type == "active_learning":
         file_types = ['train', 'test']
     else:
@@ -274,16 +271,8 @@ if __name__ == "__main__":
         if "dummy" in hp.mode:
             break
         for file_type in file_types:
-            # create the tag of the run
-            # if hp.with_intents == 1:
-            #     task = main_task + str(intent)
-            # else:
-            #     task = main_task
             task = main_task + str(intent)
             task_name = task.split('/')[1]
-            # input_path = hp.input_path + '/' + task_name[:-1] + '_' + file_type + str(intent) + '.txt'
-
-
             # load the models
             config, model = load_model(task, hp.checkpoint_path,
                                        hp.lm, hp.use_gpu, seed,
@@ -293,10 +282,6 @@ if __name__ == "__main__":
                 if training_type == 'active_learning':
                     input_path_available_pool = hp.input_path + '/available_pool.txt'
                     input_path_current_train = hp.input_path + '/current_train.txt'
-                    # if iteration > 1:
-                    #     input_path_files = [input_path_available_pool, input_path_current_train]
-                    # else:
-                    #     input_path_files = [input_path_available_pool]
                     input_path_files = [input_path_available_pool, input_path_current_train]
                 else:
                     input_path_files = [hp.input_path + '/train.txt']
@@ -314,10 +299,6 @@ if __name__ == "__main__":
                                                 '_current_train' + str(intent) + '_iter' + \
                                                 str(iteration) + '_' + file_type + '_output_seed' + \
                                                 str(seed) + '.txt'
-                    # if iteration > 1:
-                    #     output_path_files = [output_path_available_pool, output_path_current_train]
-                    # else:
-                    #     output_path_files = [output_path_available_pool]
                     output_path_files = [output_path_available_pool, output_path_current_train]
                 else:
                     output_path_files = [output_path + task_name[:-1] +
