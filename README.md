@@ -1,5 +1,5 @@
 # The Battleship Approach
-Code repository for our paper *The Battleship Approach to the Low Resource Entity Matching Problem* ([SIGMOD2024](https://2024.sigmod.org/)).
+Code repository for our paper *The Battleship Approach to the Low Resource Entity Matching Problem* ([SIGMOD24](https://2024.sigmod.org/)).
 
 Entity Matching (ER) is the task of deciding whether two data tuples refer to the same real-world entity.
 Solution based on pre-trained language models suffer from a major drawback as they require large amounts of labeled data for training.
